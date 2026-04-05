@@ -78,6 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     env:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -91,9 +92,6 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
       AWS_REGION: ${{ vars.S3_REGION }}
       AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
-    concurrency:
-      group: ${{ vars.REPO_NAME }}-x86_64
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
