@@ -20,7 +20,7 @@ jobs:
       has_builds: ${{ steps.plan.outputs.has_builds }}
       has_removals: ${{ steps.plan.outputs.has_removals }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -86,7 +86,7 @@ jobs:
       AWS_REGION: ${{ vars.S3_REGION }}
       AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
 
       - name: Remove package from repo
@@ -119,7 +119,7 @@ jobs:
       AWS_REGION: ${{ vars.S3_REGION }}
       AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
 
       - name: Prepare build context

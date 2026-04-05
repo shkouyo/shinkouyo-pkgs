@@ -32,7 +32,7 @@ jobs:
       AWS_REGION: ${{ vars.S3_REGION }}
       AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Validate input
         run: |
