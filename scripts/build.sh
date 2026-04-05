@@ -27,7 +27,9 @@ prepare() {
     is_template_manifest "$manifest_path" && die "template manifest is not buildable"
 
     source_dir="$context_dir/source"
+    pkgdest_dir="$context_dir/pkgdest"
     rm -rf "$source_dir"
+    mkdir -p "$pkgdest_dir"
     git clone --filter=blob:none "$SOURCE_GIT" "$source_dir"
     (
         cd "$source_dir"
@@ -43,8 +45,10 @@ prepare() {
     # The Arch build action runs as an unprivileged container user against the
     # runner temp mount, so the prepared tree must be writable by that user.
     chmod -R a+rwX "$source_dir"
+    chmod -R a+rwX "$pkgdest_dir"
 
     manifest_write_github_env "$context_dir/github.env"
+    printf 'PKGDEST=%s\n' "$pkgdest_dir" >>"$context_dir/github.env"
 
     {
         printf 'MANIFEST_PATH=%s\n' "$(shell_quote "$(CDPATH= cd -- "$(dirname -- "$manifest_path")" && pwd)/$(basename "$manifest_path")")"
@@ -53,6 +57,7 @@ prepare() {
         printf 'SOURCE_REF=%s\n' "$(shell_quote "$SOURCE_REF")"
         printf 'SOURCE_DIR=%s\n' "$(shell_quote "$source_dir")"
         printf 'BUILD_DIR=%s\n' "$(shell_quote "$build_dir")"
+        printf 'PKGDEST=%s\n' "$(shell_quote "$pkgdest_dir")"
         printf 'BUILD_PKGBUILD=%s\n' "$(shell_quote "$BUILD_PKGBUILD")"
         printf 'LAST_SOURCE_COMMIT=%s\n' "$(shell_quote "$(cat "$context_dir/last_source_commit.txt")")"
     } >"$context_dir/context.env"
@@ -68,8 +73,13 @@ collect() {
 
     artifact_list_file="$context_dir/artifacts.list"
     : >"$artifact_list_file"
-    find "$SOURCE_DIR" -type f -name '*.pkg.tar.zst' | LC_ALL=C sort >"$artifact_list_file"
-    [ -s "$artifact_list_file" ] || die "no built package artifacts found in $SOURCE_DIR"
+    if [ -n "${PKGDEST-}" ] && [ -d "$PKGDEST" ]; then
+        find "$PKGDEST" -type f -name '*.pkg.tar.zst' | LC_ALL=C sort >"$artifact_list_file"
+    fi
+    if [ ! -s "$artifact_list_file" ]; then
+        find "$SOURCE_DIR" -type f -name '*.pkg.tar.zst' | LC_ALL=C sort >"$artifact_list_file"
+    fi
+    [ -s "$artifact_list_file" ] || die "no built package artifacts found in ${PKGDEST:-$SOURCE_DIR}"
 
     export GNUPGHOME="$context_dir/gnupg"
     mkdir -p "$GNUPGHOME"
