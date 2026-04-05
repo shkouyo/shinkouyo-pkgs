@@ -3,7 +3,7 @@ name: check-updates
 on:
   schedule:
     - cron: '0 19,7 * * *'
-    - cron: '0 20 */2 * *'
+    - cron: '0 20 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -52,7 +52,7 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             case "${{ github.event.schedule }}" in
               '0 19,7 * * *') mode='regular' ;;
-              '0 20 */2 * *') mode='vcs' ;;
+              '0 20 * * *') mode='vcs' ;;
             esac
           fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.mode }}" ]; then
