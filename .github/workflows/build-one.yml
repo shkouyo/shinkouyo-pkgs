@@ -1,0 +1,72 @@
+name: build-one
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package name without .sh
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ vars.REPO_NAME }}-x86_64
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      S3_REGION: ${{ vars.S3_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate input
+        run: |
+          set -eu
+          test -n "${{ github.event.inputs.package }}"
+          test "${{ github.event.inputs.package }}" != "template"
+          test -f "packages/${{ github.event.inputs.package }}.sh"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.S3_REGION }}
+
+      - name: Prepare build context
+        id: prepare
+        run: |
+          set -eu
+          chmod +x scripts/*.sh
+          context_dir="$RUNNER_TEMP/build-${{ github.event.inputs.package }}"
+          scripts/build.sh prepare "packages/${{ github.event.inputs.package }}.sh" "$context_dir"
+          cat "$context_dir/github.env" >> "$GITHUB_ENV"
+          . "$context_dir/context.env"
+          printf 'context_dir=%s\n' "$context_dir" >> "$GITHUB_OUTPUT"
+          printf 'build_dir=%s\n' "$BUILD_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Build package
+        uses: heyhusen/archlinux-package-action@v3
+        with:
+          path: ${{ steps.prepare.outputs.build_dir }}
+          flags: -sC --noconfirm
+          namcap: false
+          srcinfo: false
+          aur: true
+
+      - name: Collect artifacts
+        run: |
+          set -eu
+          scripts/build.sh collect "${{ steps.prepare.outputs.context_dir }}"
+
+      - name: Publish artifacts
+        run: |
+          set -eu
+          scripts/publish.sh "${{ steps.prepare.outputs.context_dir }}"

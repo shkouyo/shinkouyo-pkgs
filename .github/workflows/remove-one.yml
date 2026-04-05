@@ -1,0 +1,50 @@
+name: remove-one
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package name without .sh
+        required: true
+        type: string
+      confirm:
+        description: Type DELETE to confirm removal
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ vars.REPO_NAME }}-x86_64
+  cancel-in-progress: false
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      S3_REGION: ${{ vars.S3_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate input
+        run: |
+          set -eu
+          test "${{ github.event.inputs.confirm }}" = "DELETE"
+          test "${{ github.event.inputs.package }}" != "template"
+          chmod +x scripts/*.sh
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.S3_REGION }}
+
+      - name: Remove package
+        run: |
+          set -eu
+          scripts/remove.sh "${{ github.event.inputs.package }}"

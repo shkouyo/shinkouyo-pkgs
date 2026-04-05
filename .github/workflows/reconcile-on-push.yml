@@ -1,0 +1,160 @@
+name: reconcile-on-push
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - packages/**
+
+concurrency:
+  group: ${{ vars.REPO_NAME }}-x86_64
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      build_matrix: ${{ steps.plan.outputs.build_matrix }}
+      remove_matrix: ${{ steps.plan.outputs.remove_matrix }}
+      has_builds: ${{ steps.plan.outputs.has_builds }}
+      has_removals: ${{ steps.plan.outputs.has_removals }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Compute package changes
+        id: plan
+        run: |
+          set -eu
+          before="${{ github.event.before }}"
+          after="${{ github.sha }}"
+          diff_file="$RUNNER_TEMP/diff.txt"
+          git diff --name-status "$before" "$after" -- 'packages/*.sh' > "$diff_file" || :
+          python3 - "$diff_file" <<'PY' >> "$GITHUB_OUTPUT"
+          import json, pathlib, sys
+          diff_path = pathlib.Path(sys.argv[1])
+          builds, removals = [], []
+          for raw in diff_path.read_text().splitlines():
+              if not raw.strip():
+                  continue
+              parts = raw.split("\t")
+              status = parts[0]
+              if status.startswith("R"):
+                  old_path, new_path = parts[1], parts[2]
+                  old_name = pathlib.Path(old_path).stem
+                  new_name = pathlib.Path(new_path).stem
+                  if old_name != "template":
+                      removals.append({"package": old_name})
+                  if new_name != "template":
+                      builds.append({"package": new_name})
+                  continue
+              path = parts[1]
+              name = pathlib.Path(path).stem
+              if name == "template":
+                  continue
+              if status == "D":
+                  removals.append({"package": name})
+              else:
+                  builds.append({"package": name})
+          print(f"build_matrix={json.dumps({'include': builds})}")
+          print(f"remove_matrix={json.dumps({'include': removals})}")
+          print(f"has_builds={'true' if builds else 'false'}")
+          print(f"has_removals={'true' if removals else 'false'}")
+          PY
+
+  remove:
+    needs: plan
+    if: needs.plan.outputs.has_removals == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.remove_matrix) }}
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      S3_REGION: ${{ vars.S3_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
+    concurrency:
+      group: ${{ vars.REPO_NAME }}-x86_64
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.S3_REGION }}
+
+      - name: Remove package from repo
+        run: |
+          set -eu
+          chmod +x scripts/*.sh
+          scripts/remove.sh "${{ matrix.package }}"
+
+  build:
+    needs:
+      - plan
+      - remove
+    if: ${{ always() && needs.plan.outputs.has_builds == 'true' && (needs.plan.outputs.has_removals == 'false' || needs.remove.result == 'success') }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.build_matrix) }}
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      S3_REGION: ${{ vars.S3_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
+    concurrency:
+      group: ${{ vars.REPO_NAME }}-x86_64
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.S3_REGION }}
+
+      - name: Prepare build context
+        id: prepare
+        run: |
+          set -eu
+          chmod +x scripts/*.sh
+          context_dir="$RUNNER_TEMP/build-${{ matrix.package }}"
+          scripts/build.sh prepare "packages/${{ matrix.package }}.sh" "$context_dir"
+          cat "$context_dir/github.env" >> "$GITHUB_ENV"
+          . "$context_dir/context.env"
+          printf 'context_dir=%s\n' "$context_dir" >> "$GITHUB_OUTPUT"
+          printf 'build_dir=%s\n' "$BUILD_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Build package
+        uses: heyhusen/archlinux-package-action@v3
+        with:
+          path: ${{ steps.prepare.outputs.build_dir }}
+          flags: -sC --noconfirm
+          namcap: false
+          srcinfo: false
+          aur: true
+
+      - name: Collect artifacts
+        run: |
+          set -eu
+          scripts/build.sh collect "${{ steps.prepare.outputs.context_dir }}"
+
+      - name: Publish artifacts
+        run: |
+          set -eu
+          scripts/publish.sh "${{ steps.prepare.outputs.context_dir }}"

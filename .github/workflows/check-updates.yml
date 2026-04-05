@@ -1,0 +1,134 @@
+name: check-updates
+
+on:
+  schedule:
+    - cron: '0 19,7 * * *'
+    - cron: '0 20 */2 * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Scan mode
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - regular
+          - vcs
+
+concurrency:
+  group: ${{ vars.REPO_NAME }}-x86_64
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      S3_REGION: ${{ vars.S3_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
+    outputs:
+      matrix: ${{ steps.queue.outputs.matrix }}
+      has_items: ${{ steps.queue.outputs.has_items }}
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.S3_REGION }}
+
+      - name: Select mode
+        id: mode
+        run: |
+          set -eu
+          mode='all'
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            case "${{ github.event.schedule }}" in
+              '0 19,7 * * *') mode='regular' ;;
+              '0 20 */2 * *') mode='vcs' ;;
+            esac
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.mode }}" ]; then
+            mode='${{ github.event.inputs.mode }}'
+          fi
+          printf 'mode=%s\n' "$mode" >> "$GITHUB_OUTPUT"
+
+      - name: Build queue
+        id: queue
+        run: |
+          set -eu
+          chmod +x scripts/*.sh
+          scripts/check-updates.sh "${{ steps.mode.outputs.mode }}" | LC_ALL=C sort -u > "$RUNNER_TEMP/packages.txt"
+          python3 - "$RUNNER_TEMP/packages.txt" <<'PY' >> "$GITHUB_OUTPUT"
+          import json, pathlib, sys
+          packages = [line.strip() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+          print(f"matrix={json.dumps({'include': [{'package': p} for p in packages]})}")
+          print(f"has_items={'true' if packages else 'false'}")
+          PY
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.has_items == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      S3_REGION: ${{ vars.S3_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
+    concurrency:
+      group: ${{ vars.REPO_NAME }}-x86_64
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.S3_REGION }}
+
+      - name: Prepare build context
+        id: prepare
+        run: |
+          set -eu
+          chmod +x scripts/*.sh
+          context_dir="$RUNNER_TEMP/build-${{ matrix.package }}"
+          scripts/build.sh prepare "packages/${{ matrix.package }}.sh" "$context_dir"
+          cat "$context_dir/github.env" >> "$GITHUB_ENV"
+          . "$context_dir/context.env"
+          printf 'context_dir=%s\n' "$context_dir" >> "$GITHUB_OUTPUT"
+          printf 'build_dir=%s\n' "$BUILD_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Build package
+        uses: heyhusen/archlinux-package-action@v3
+        with:
+          path: ${{ steps.prepare.outputs.build_dir }}
+          flags: -sC --noconfirm
+          namcap: false
+          srcinfo: false
+          aur: true
+
+      - name: Collect artifacts
+        run: |
+          set -eu
+          scripts/build.sh collect "${{ steps.prepare.outputs.context_dir }}"
+
+      - name: Publish artifacts
+        run: |
+          set -eu
+          scripts/publish.sh "${{ steps.prepare.outputs.context_dir }}"
