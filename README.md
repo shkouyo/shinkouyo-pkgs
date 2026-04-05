@@ -1,10 +1,15 @@
-> [!WARNING]  
-> **x86_64** only
+> [!TIP]  
+> Available for **x86_64** only  
+> [Package list](https://github.com/shkouyo/shinkouyo-pkgs/tree/main/packages)
 
 ```sh
 # Import and trust the key
-sudo pacman-key --recv-keys 06173DBA6E1A22B8D13F1FC3B46745055BE38B78 --keyserver keyserver.ubuntu.com
-sudo pacman-key --lsign-key 06173DBA6E1A22B8D13F1FC3B46745055BE38B78
+sudo pacman-key \
+  --recv-keys 06173DBA6E1A22B8D13F1FC3B46745055BE38B78 \
+  --keyserver keyserver.ubuntu.com
+
+sudo pacman-key \
+  --lsign-key 06173DBA6E1A22B8D13F1FC3B46745055BE38B78
 
 # Add the repo
 sudo tee -a /etc/pacman.conf << 'EOF'
