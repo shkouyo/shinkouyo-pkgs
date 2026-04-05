@@ -36,6 +36,11 @@ require_runtime_env() {
     require_env S3_REGION
 }
 
+require_build_env() {
+    require_runtime_env
+    require_env PACKAGER
+}
+
 shell_quote() {
     escaped=$(printf '%s' "$1" | sed "s/'/'\\\\''/g")
     printf "'%s'" "$escaped"

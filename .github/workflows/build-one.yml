@@ -18,6 +18,7 @@ jobs:
     env:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      PACKAGER: ${{ vars.PACKAGER }}
       REPO_NAME: ${{ vars.REPO_NAME }}
       S3_BUCKET: ${{ vars.S3_BUCKET }}
       S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}

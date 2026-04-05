@@ -18,6 +18,9 @@ context_dir=$1
 . "$context_dir/context.env"
 state_load "$context_dir/state.env"
 
+new_name=$NAME
+new_pkgfiles=$PKGFILES
+
 repo_dir=$(mktemp -d)
 trap 'rm -rf "$repo_dir"' EXIT HUP INT TERM
 
@@ -25,6 +28,13 @@ db_archive=$(repo_db_archive_name)
 files_archive=$(repo_files_archive_name)
 db_name=$(repo_db_name)
 files_name=$(repo_files_name)
+
+old_state_file="$repo_dir/old-state.env"
+old_pkgfiles=''
+if state_download "$new_name" "$old_state_file" >/dev/null 2>&1; then
+    state_load "$old_state_file"
+    old_pkgfiles=$PKGFILES
+fi
 
 if s3_object_exists "$PKG_PREFIX/$db_archive"; then
     aws_s3_cp "$(repo_s3_uri "$db_archive")" "$repo_dir/$db_archive"
@@ -62,4 +72,17 @@ aws_s3_cp "$repo_dir/$db_archive" "$(repo_s3_uri "$db_archive")"
 aws_s3_cp "$repo_dir/$db_name" "$(repo_s3_uri "$db_name")"
 aws_s3_cp "$repo_dir/$files_archive" "$(repo_s3_uri "$files_archive")"
 aws_s3_cp "$repo_dir/$files_name" "$(repo_s3_uri "$files_name")"
-state_upload "$NAME" "$context_dir/state.env"
+
+for old_pkgfile in $old_pkgfiles; do
+    case " $new_pkgfiles " in
+        *" $old_pkgfile "*) continue ;;
+    esac
+    if s3_object_exists "$PKG_PREFIX/$old_pkgfile"; then
+        aws_s3_rm "$(repo_s3_uri "$old_pkgfile")"
+    fi
+    if s3_object_exists "$PKG_PREFIX/$old_pkgfile.sig"; then
+        aws_s3_rm "$(repo_s3_uri "$old_pkgfile.sig")"
+    fi
+done
+
+state_upload "$new_name" "$context_dir/state.env"

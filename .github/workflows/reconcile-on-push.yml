@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Compute package changes
         id: plan
@@ -31,7 +31,7 @@ jobs:
           before="${{ github.event.before }}"
           after="${{ github.sha }}"
           diff_file="$RUNNER_TEMP/diff.txt"
-          git diff --name-status "$before" "$after" -- 'packages/*.sh' > "$diff_file" || :
+          git diff --name-status "$before" "$after" -- 'packages/*.sh' > "$diff_file"
           python3 - "$diff_file" <<'PY' >> "$GITHUB_OUTPUT"
           import json, pathlib, sys
           diff_path = pathlib.Path(sys.argv[1])
@@ -75,6 +75,7 @@ jobs:
     env:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      PACKAGER: ${{ vars.PACKAGER }}
       REPO_NAME: ${{ vars.REPO_NAME }}
       S3_BUCKET: ${{ vars.S3_BUCKET }}
       S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
@@ -107,6 +108,7 @@ jobs:
     env:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      PACKAGER: ${{ vars.PACKAGER }}
       REPO_NAME: ${{ vars.REPO_NAME }}
       S3_BUCKET: ${{ vars.S3_BUCKET }}
       S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}

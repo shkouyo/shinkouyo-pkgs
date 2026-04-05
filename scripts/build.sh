@@ -19,6 +19,7 @@ prepare() {
     manifest_path=$1
     context_dir=$2
 
+    require_build_env
     require_cmd git
     mkdir -p "$context_dir"
     context_dir=$(CDPATH= cd -- "$context_dir" && pwd)
@@ -49,6 +50,7 @@ prepare() {
 
     manifest_write_github_env "$context_dir/github.env"
     printf 'PKGDEST=%s\n' "$pkgdest_dir" >>"$context_dir/github.env"
+    printf 'PACKAGER=%s\n' "$PACKAGER" >>"$context_dir/github.env"
 
     {
         printf 'MANIFEST_PATH=%s\n' "$(shell_quote "$(CDPATH= cd -- "$(dirname -- "$manifest_path")" && pwd)/$(basename "$manifest_path")")"
@@ -58,6 +60,7 @@ prepare() {
         printf 'SOURCE_DIR=%s\n' "$(shell_quote "$source_dir")"
         printf 'BUILD_DIR=%s\n' "$(shell_quote "$build_dir")"
         printf 'PKGDEST=%s\n' "$(shell_quote "$pkgdest_dir")"
+        printf 'PACKAGER=%s\n' "$(shell_quote "$PACKAGER")"
         printf 'BUILD_PKGBUILD=%s\n' "$(shell_quote "$BUILD_PKGBUILD")"
         printf 'LAST_SOURCE_COMMIT=%s\n' "$(shell_quote "$(cat "$context_dir/last_source_commit.txt")")"
     } >"$context_dir/context.env"
