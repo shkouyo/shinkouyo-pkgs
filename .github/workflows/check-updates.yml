@@ -101,19 +101,19 @@ jobs:
         run: |
           set -eu
           chmod +x scripts/*.sh
-          context_dir="$RUNNER_TEMP/build-${{ matrix.package }}"
+          context_dir="$GITHUB_WORKSPACE/.ci-tmp/build-${{ matrix.package }}"
           scripts/build.sh prepare "packages/${{ matrix.package }}.sh" "$context_dir"
           cat "$context_dir/github.env" >> "$GITHUB_ENV"
           . "$context_dir/context.env"
-          container_build_dir=$(printf '%s\n' "$BUILD_DIR" | sed "s#^$RUNNER_TEMP#/github/runner_temp#")
+          action_path=$(printf '%s\n' "$BUILD_DIR" | sed "s#^$GITHUB_WORKSPACE/##")
           printf 'context_dir=%s\n' "$context_dir" >> "$GITHUB_OUTPUT"
           printf 'build_dir=%s\n' "$BUILD_DIR" >> "$GITHUB_OUTPUT"
-          printf 'container_build_dir=%s\n' "$container_build_dir" >> "$GITHUB_OUTPUT"
+          printf 'action_path=%s\n' "$action_path" >> "$GITHUB_OUTPUT"
 
       - name: Build package
         uses: heyhusen/archlinux-package-action@v3.0.0
         with:
-          path: ${{ steps.prepare.outputs.container_build_dir }}
+          path: ${{ steps.prepare.outputs.action_path }}
           flags: -sC --noconfirm
           namcap: false
           srcinfo: false
@@ -129,3 +129,9 @@ jobs:
         run: |
           set -eu
           scripts/publish.sh "${{ steps.prepare.outputs.context_dir }}"
+
+      - name: Cleanup build context
+        if: ${{ always() }}
+        run: |
+          set -eu
+          rm -rf "${{ steps.prepare.outputs.context_dir }}"
