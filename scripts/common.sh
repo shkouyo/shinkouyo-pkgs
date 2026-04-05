@@ -165,8 +165,14 @@ materialize_repo_links() {
     files_name=$(repo_files_name)
 
     [ -f "$repo_dir/$db_archive" ] || return 0
+
+    rm -f "$repo_dir/$db_name"
     cp -f "$repo_dir/$db_archive" "$repo_dir/$db_name"
-    [ -f "$repo_dir/$files_archive" ] && cp -f "$repo_dir/$files_archive" "$repo_dir/$files_name"
+
+    if [ -f "$repo_dir/$files_archive" ]; then
+        rm -f "$repo_dir/$files_name"
+        cp -f "$repo_dir/$files_archive" "$repo_dir/$files_name"
+    fi
 }
 
 trim_package_basename() {
