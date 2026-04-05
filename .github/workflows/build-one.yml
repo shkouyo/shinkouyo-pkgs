@@ -47,17 +47,20 @@ jobs:
           scripts/build.sh prepare "packages/${{ github.event.inputs.package }}.sh" "$context_dir"
           cat "$context_dir/github.env" >> "$GITHUB_ENV"
           . "$context_dir/context.env"
+          container_build_dir=$(printf '%s\n' "$BUILD_DIR" | sed "s#^$RUNNER_TEMP#/github/runner_temp#")
           printf 'context_dir=%s\n' "$context_dir" >> "$GITHUB_OUTPUT"
           printf 'build_dir=%s\n' "$BUILD_DIR" >> "$GITHUB_OUTPUT"
+          printf 'container_build_dir=%s\n' "$container_build_dir" >> "$GITHUB_OUTPUT"
 
       - name: Build package
         uses: heyhusen/archlinux-package-action@v3.0.0
         with:
-          path: ${{ steps.prepare.outputs.build_dir }}
+          path: ${{ steps.prepare.outputs.container_build_dir }}
           flags: -sC --noconfirm
           namcap: false
           srcinfo: false
           aur: true
+          archlinux-keyring: false
 
       - name: Collect artifacts
         run: |
