@@ -60,7 +60,7 @@ jobs:
           namcap: false
           srcinfo: false
           aur: true
-          archlinux-keyring: false
+          archlinux_keyring: false
 
       - name: Collect artifacts
         run: |
