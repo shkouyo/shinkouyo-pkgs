@@ -40,6 +40,10 @@ prepare() {
     [ -d "$build_dir" ] || die "BUILD_WORKDIR not found: $BUILD_WORKDIR"
     [ -f "$source_dir/$BUILD_PKGBUILD" ] || die "BUILD_PKGBUILD not found: $BUILD_PKGBUILD"
 
+    # The Arch build action runs as an unprivileged container user against the
+    # runner temp mount, so the prepared tree must be writable by that user.
+    chmod -R a+rwX "$source_dir"
+
     manifest_write_github_env "$context_dir/github.env"
 
     {
