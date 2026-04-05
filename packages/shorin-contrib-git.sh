@@ -1,9 +1,9 @@
 # shellcheck disable=all
 
 SCHEMA_VERSION=1
-NAME='shorinclip-git'
+NAME='shorin-contrib-git'
 
-SOURCE_GIT='https://aur.archlinux.org/shorinclip-git.git'
+SOURCE_GIT='https://aur.archlinux.org/shorin-contrib-git.git'
 SOURCE_REF='master'
 
 BUILD_WORKDIR='.'
