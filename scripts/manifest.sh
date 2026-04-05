@@ -56,6 +56,7 @@ manifest_write_github_env() {
     full_file=$(mktemp)
     trap 'rm -f "$base_file" "$full_file"' EXIT HUP INT TERM
 
+    : >"$output_file"
     manifest_emit_build_env "$base_file" "$full_file"
     comm -13 "$base_file" "$full_file" | while IFS= read -r line; do
         case $line in
