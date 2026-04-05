@@ -33,15 +33,21 @@ if s3_object_exists "$PKG_PREFIX/$files_archive"; then
     aws_s3_cp "$(repo_s3_uri "$files_archive")" "$repo_dir/$files_archive"
 fi
 
-pkg_args=''
+pkg_args_extra=''
+artifacts_dir=''
 while IFS= read -r pkgfile; do
     [ -n "$pkgfile" ] || continue
-    pkg_args="$pkg_args /workspace${pkgfile#$ROOT_DIR}"
+    pkgdir=$(dirname "$pkgfile")
+    if [ -z "$artifacts_dir" ]; then
+        artifacts_dir=$pkgdir
+    elif [ "$artifacts_dir" != "$pkgdir" ]; then
+        die "artifacts.list contains files from multiple directories"
+    fi
+    pkg_args_extra="$pkg_args_extra /extra/$(basename "$pkgfile")"
 done <"$context_dir/artifacts.list"
-[ -n "$pkg_args" ] || die "artifacts.list is empty"
+[ -n "$pkg_args_extra" ] || die "artifacts.list is empty"
+[ -n "$artifacts_dir" ] || die "failed to determine artifacts directory"
 
-artifacts_dir=$(dirname "$(head -n 1 "$context_dir/artifacts.list")")
-pkg_args_extra=$(printf '%s' "$pkg_args" | sed 's#/workspace#/extra#g')
 run_in_arch_tools --repo-mount "$repo_dir" --extra-mount "$artifacts_dir" "repo-add \"$db_archive\"$pkg_args_extra"
 materialize_repo_links "$repo_dir"
 
