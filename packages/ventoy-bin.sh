@@ -1,7 +1,7 @@
 # shellcheck disable=all
 
 SCHEMA_VERSION=1
-NAME=ventoy-bin'
+NAME='ventoy-bin'
 
 SOURCE_GIT='https://aur.archlinux.org/ventoy-bin.git'
 SOURCE_REF='master'
