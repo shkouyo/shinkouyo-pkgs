@@ -34,8 +34,15 @@ prepare() {
     git clone --filter=blob:none "$SOURCE_GIT" "$source_dir"
     (
         cd "$source_dir"
-        git checkout --detach "$SOURCE_REF"
-        resolved_commit=$(git rev-parse HEAD)
+        resolved_commit=''
+        if resolved_commit=$(git rev-parse --verify "${SOURCE_REF}^{commit}" 2>/dev/null); then
+            :
+        elif resolved_commit=$(git rev-parse --verify "origin/${SOURCE_REF}^{commit}" 2>/dev/null); then
+            :
+        else
+            die "failed to resolve SOURCE_REF to a commit: $SOURCE_REF"
+        fi
+        git checkout --detach "$resolved_commit"
         printf '%s\n' "$resolved_commit" >"$context_dir/last_source_commit.txt"
     )
 
