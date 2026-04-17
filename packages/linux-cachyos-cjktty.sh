@@ -14,4 +14,6 @@ UPDATE_VCS=0
 
 build_env() {
     export _build_zfs=yes
+    export _build_nvidia_open=yes
+    export _build_r8125=yes
 }
