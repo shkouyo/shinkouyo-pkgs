@@ -1,9 +1,9 @@
 # shellcheck disable=all
 
 SCHEMA_VERSION=1
-NAME='niri-wip-git'
+NAME='niri-git'
 
-SOURCE_GIT='https://aur.archlinux.org/niri-wip-git.git'
+SOURCE_GIT='https://aur.archlinux.org/niri-git.git'
 SOURCE_REF='master'
 
 BUILD_WORKDIR='.'
