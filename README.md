@@ -14,6 +14,7 @@ sudo pacman-key \
 # Add the repo
 sudo tee -a /etc/pacman.conf << 'EOF'
 [shinkouyo-pkgs]
+SigLevel = Required DatabaseOptional
 Server = https://pkgs.0x0f.dev/$arch
 EOF
 
