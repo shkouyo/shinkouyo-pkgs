@@ -60,6 +60,9 @@ manifest_write_github_env() {
     manifest_emit_build_env "$base_file" "$full_file"
     comm -13 "$base_file" "$full_file" | while IFS= read -r line; do
         case $line in
+            _build_*=*)
+                printf '%s\n' "$line" >>"$output_file"
+                ;;
             ''|PWD=*|SHLVL=*|_*=*|OLDPWD=*|GITHUB_*|RUNNER_*|CI=*|HOME=*|PATH=*|LANG=*|LC_*=*|HOSTNAME=*|TERM=*|USER=*)
                 ;;
             *=*)
