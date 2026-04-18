@@ -79,6 +79,8 @@ prepare() {
 }
 
 run_probe_makepkg() {
+    build_env
+    export PKGDEST PACKAGER
     makepkg --nobuild --nodeps --skipinteg -p "$BUILD_PKGBUILD" >/dev/null
     makepkg --packagelist --nodeps --noextract --noprepare -p "$BUILD_PKGBUILD"
 }
@@ -92,7 +94,7 @@ run_probe_makepkg_in_container() {
         -w "$BUILD_DIR" \
         archlinux:multilib-devel \
         sh -eu -c \
-        ". \"$context_dir/context.env\"; . \"$context_dir/github.env\"; run_probe_makepkg() { makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null && makepkg --packagelist --nodeps --noextract --noprepare -p \"\$BUILD_PKGBUILD\"; }; run_probe_makepkg"
+        ". \"$context_dir/context.env\"; . \"$MANIFEST_PATH\"; build_env; export PKGDEST PACKAGER; makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null; makepkg --packagelist --nodeps --noextract --noprepare -p \"\$BUILD_PKGBUILD\""
 }
 
 probe_vcs() {
@@ -103,8 +105,6 @@ probe_vcs() {
 
     # shellcheck disable=SC1090
     . "$context_dir/context.env"
-    # shellcheck disable=SC1090
-    . "$context_dir/github.env"
 
     predicted_pkgfiles_file="$context_dir/predicted_pkgfiles.txt"
     : >"$predicted_pkgfiles_file"
