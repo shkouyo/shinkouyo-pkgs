@@ -1,0 +1,49 @@
+name: "🔄 更新软件包"
+description: "请求更新一个已提供的软件包的构建相关配置"
+title: "[更新请求] package-name"
+labels:
+  - "request:update-pkg"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请填写您希望更新的软件包信息
+        本仓库会自动拉取最新的 PKGBUILD。
+        此处 "更新软件包" 主要指修改构建相关配置
+
+  - type: checkboxes
+    id: precheck
+    attributes:
+      label: 提交前确认
+      description: 请在提交前确认以下内容
+      options:
+        - label: 该软件包当前已由本仓库提供
+          required: true
+        - label: 该请求不是单纯的上游版本更新
+          required: true
+        - label: 该请求尚未被提交过，或没有重复议题
+          required: true
+
+  - type: input
+    id: package_name
+    attributes:
+      label: 软件包名称
+      description: 请填写需要更新的软件包名称
+    validations:
+      required: true
+
+  - type: textarea
+    id: update_content
+    attributes:
+      label: 更新内容
+      description: 请说明希望修改的内容
+    validations:
+      required: true
+
+  - type: textarea
+    id: update_reason
+    attributes:
+      label: 更新原因
+      description: 请说明为什么需要这样修改
+    validations:
+      required: false
