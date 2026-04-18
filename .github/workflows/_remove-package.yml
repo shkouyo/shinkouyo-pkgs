@@ -1,19 +1,18 @@
-name: weekly-reconcile
+name: _remove-package
 
 on:
-  schedule:
-    - cron: '0 21 * * 5'
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ vars.REPO_NAME }}-x86_64
-  cancel-in-progress: false
+  workflow_call:
+    inputs:
+      package:
+        description: Package name without .sh
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
-  reconcile:
+  remove:
     runs-on: ubuntu-latest
     env:
       REPO_NAME: ${{ vars.REPO_NAME }}
@@ -28,7 +27,13 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Reconcile repository state
+      - name: Validate input
         run: |
           set -eu
-          sh scripts/reconcile.sh
+          test -n "${{ inputs.package }}"
+          test "${{ inputs.package }}" != "template"
+
+      - name: Remove package from repo
+        run: |
+          set -eu
+          sh scripts/remove.sh "${{ inputs.package }}"

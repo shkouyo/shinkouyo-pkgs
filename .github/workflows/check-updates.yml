@@ -20,6 +20,9 @@ concurrency:
   group: ${{ vars.REPO_NAME }}-x86_64
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   select-mode:
     runs-on: ubuntu-latest
@@ -53,9 +56,6 @@ jobs:
     if: needs.select-mode.outputs.mode == 'all' || needs.select-mode.outputs.mode == 'regular'
     runs-on: ubuntu-latest
     env:
-      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
-      PACKAGER: ${{ vars.PACKAGER }}
       REPO_NAME: ${{ vars.REPO_NAME }}
       S3_BUCKET: ${{ vars.S3_BUCKET }}
       S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
@@ -68,19 +68,13 @@ jobs:
     outputs:
       packages: ${{ steps.queue.outputs.packages }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Build regular queue
         id: queue
         run: |
           set -eu
-          chmod +x scripts/*.sh
-          scripts/check-updates.sh regular | LC_ALL=C sort -u > "$RUNNER_TEMP/packages.txt"
-          python3 - "$RUNNER_TEMP/packages.txt" <<'PY' >> "$GITHUB_OUTPUT"
-          import json, pathlib, sys
-          packages = [line.strip() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.strip()]
-          print(f"packages={json.dumps(packages)}")
-          PY
+          sh scripts/ci/queue-check-updates.sh regular
 
   plan-vcs:
     needs: select-mode
@@ -89,8 +83,6 @@ jobs:
     container:
       image: archlinux:multilib-devel
     env:
-      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
       PACKAGER: ${{ vars.PACKAGER }}
       REPO_NAME: ${{ vars.REPO_NAME }}
       S3_BUCKET: ${{ vars.S3_BUCKET }}
@@ -109,39 +101,13 @@ jobs:
           set -eu
           pacman -Sy --noconfirm --needed git aws-cli shadow
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Build VCS queue
         id: queue
         run: |
           set -eu
-          chmod +x scripts/*.sh
-          probe_user='ci-probe'
-          probe_home="$RUNNER_TEMP/$probe_user-home"
-          probe_tmp="$RUNNER_TEMP/$probe_user-tmp"
-          probe_log="$RUNNER_TEMP/plan-vcs.log"
-          packages_raw="$RUNNER_TEMP/packages.raw.txt"
-          packages_txt="$RUNNER_TEMP/packages.txt"
-          mkdir -p "$probe_tmp"
-          if ! id "$probe_user" >/dev/null 2>&1; then
-            useradd --create-home --home-dir "$probe_home" --shell /bin/sh "$probe_user"
-          fi
-          chown -R "$probe_user:$probe_user" "$probe_home" "$probe_tmp"
-          : > "$probe_log"
-          : > "$packages_raw"
-          env HOME="$probe_home" TMPDIR="$probe_tmp" su -m "$probe_user" -s /bin/sh -c '
-            set -eu
-            cd "$GITHUB_WORKSPACE"
-            printf "probe_user=%s uid=%s home=%s tmpdir=%s\n" "$(id -un)" "$(id -u)" "$HOME" "${TMPDIR-}" >&2
-            scripts/check-updates.sh vcs
-          ' >"$packages_raw" 2>"$probe_log"
-          cat "$probe_log" >&2
-          LC_ALL=C sort -u "$packages_raw" > "$packages_txt"
-          python3 - "$packages_txt" <<'PY' >> "$GITHUB_OUTPUT"
-          import json, pathlib, sys
-          packages = [line.strip() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.strip()]
-          print(f"packages={json.dumps(packages)}")
-          PY
+          sh scripts/ci/queue-check-updates.sh vcs
 
   merge-plan:
     needs:
@@ -164,93 +130,16 @@ jobs:
           VCS_PACKAGES: ${{ needs.plan-vcs.outputs.packages }}
         run: |
           set -eu
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          import os
-
-          def load_packages(result_key: str, packages_key: str) -> list[str]:
-              result = os.environ.get(result_key, "")
-              if result in {"", "skipped"}:
-                  return []
-              if result != "success":
-                  raise SystemExit(f"{result_key}={result} is not mergeable")
-              raw = os.environ.get(packages_key, "")
-              if not raw:
-                  return []
-              data = json.loads(raw)
-              if not isinstance(data, list):
-                  raise SystemExit(f"{packages_key} is not a JSON array")
-              return [str(item) for item in data if str(item).strip()]
-
-          packages = sorted(set(
-              load_packages("REGULAR_RESULT", "REGULAR_PACKAGES")
-              + load_packages("VCS_RESULT", "VCS_PACKAGES")
-          ))
-          matrix = {"include": [{"package": package} for package in packages]}
-          print(f"matrix={json.dumps(matrix)}")
-          print(f"has_items={'true' if packages else 'false'}")
-          PY
+          python3 scripts/ci/merge-package-plans.py >> "$GITHUB_OUTPUT"
 
   build:
     needs: merge-plan
     if: needs.merge-plan.outputs.has_items == 'true'
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix: ${{ fromJson(needs.merge-plan.outputs.matrix) }}
-    env:
-      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
-      PACKAGER: ${{ vars.PACKAGER }}
-      REPO_NAME: ${{ vars.REPO_NAME }}
-      S3_BUCKET: ${{ vars.S3_BUCKET }}
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
-      S3_REGION: ${{ vars.S3_REGION }}
-      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ vars.S3_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Prepare build context
-        id: prepare
-        run: |
-          set -eu
-          chmod +x scripts/*.sh
-          context_dir="$GITHUB_WORKSPACE/.ci-tmp/build-${{ matrix.package }}"
-          scripts/build.sh prepare "packages/${{ matrix.package }}.sh" "$context_dir"
-          cat "$context_dir/github.env" >> "$GITHUB_ENV"
-          . "$context_dir/context.env"
-          action_path=$(printf '%s\n' "$BUILD_DIR" | sed "s#^$GITHUB_WORKSPACE/##")
-          printf 'context_dir=%s\n' "$context_dir" >> "$GITHUB_OUTPUT"
-          printf 'build_dir=%s\n' "$BUILD_DIR" >> "$GITHUB_OUTPUT"
-          printf 'action_path=%s\n' "$action_path" >> "$GITHUB_OUTPUT"
-
-      - name: Build package
-        uses: heyhusen/archlinux-package-action@v3.0.0
-        with:
-          path: ${{ steps.prepare.outputs.action_path }}
-          flags: -sC --noconfirm
-          namcap: false
-          srcinfo: false
-          aur: true
-          archlinux_keyring: false
-
-      - name: Collect artifacts
-        run: |
-          set -eu
-          scripts/build.sh collect "${{ steps.prepare.outputs.context_dir }}"
-
-      - name: Publish artifacts
-        run: |
-          set -eu
-          scripts/publish.sh "${{ steps.prepare.outputs.context_dir }}"
-
-      - name: Cleanup build context
-        if: ${{ always() }}
-        run: |
-          set -eu
-          rm -rf "${{ steps.prepare.outputs.context_dir }}"
+    uses: ./.github/workflows/_build-package.yml
+    with:
+      package: ${{ matrix.package }}
+    secrets: inherit

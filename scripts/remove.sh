@@ -10,7 +10,7 @@ set -eu
     exit 1
 }
 
-require_runtime_env
+require_update_env
 require_cmd aws
 
 name=$1

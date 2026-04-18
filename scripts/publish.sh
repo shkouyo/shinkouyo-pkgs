@@ -10,7 +10,7 @@ set -eu
     exit 1
 }
 
-require_runtime_env
+require_publish_env
 require_cmd aws
 
 context_dir=$1
@@ -32,8 +32,8 @@ files_name=$(repo_files_name)
 old_state_file="$repo_dir/old-state.env"
 old_pkgfiles=''
 if state_download "$new_name" "$old_state_file" >/dev/null 2>&1; then
-    state_load "$old_state_file"
-    old_pkgfiles=$PKGFILES
+    eval "$(state_emit_prefixed OLD "$old_state_file")"
+    old_pkgfiles=$OLD_PKGFILES
 fi
 
 if s3_object_exists "$PKG_PREFIX/$db_archive"; then

@@ -34,7 +34,7 @@ prepare_context() {
     manifest_path=$1
     context_dir=$2
 
-    require_build_env
+    require_probe_env
     require_cmd git
     mkdir -p "$context_dir"
     context_dir=$(CDPATH= cd -- "$context_dir" && pwd)
@@ -75,7 +75,7 @@ prepare_context() {
     printf 'PACKAGER=%s\n' "$PACKAGER" >>"$context_dir/github.env"
 
     {
-        printf 'MANIFEST_PATH=%s\n' "$(shell_quote "$(CDPATH= cd -- "$(dirname -- "$manifest_path")" && pwd)/$(basename "$manifest_path")")"
+        printf 'MANIFEST_PATH=%s\n' "$(shell_quote "$(manifest_abs_path "$manifest_path")")"
         printf 'NAME=%s\n' "$(shell_quote "$NAME")"
         printf 'SOURCE_GIT=%s\n' "$(shell_quote "$SOURCE_GIT")"
         printf 'SOURCE_REF=%s\n' "$(shell_quote "$SOURCE_REF")"
@@ -202,7 +202,7 @@ probe_vcs() {
 
 collect() {
     context_dir=$1
-    require_runtime_env
+    require_publish_env
     require_cmd gpg
 
     # shellcheck disable=SC1090

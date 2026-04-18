@@ -17,7 +17,7 @@ case $mode in
     *) die "unsupported mode: $mode" ;;
 esac
 
-require_runtime_env
+require_update_env
 require_cmd git
 require_cmd aws
 
@@ -51,10 +51,10 @@ check_regular_package() {
         return 0
     fi
 
-    state_load "$state_file"
+    eval "$(state_emit_prefixed OLD "$state_file")"
     remote_line=$(git ls-remote "$manifest_source_git" "$manifest_source_ref" | awk 'NR==1{print $1}')
     [ -n "$remote_line" ] || die "failed to resolve remote ref for $NAME"
-    if [ "$remote_line" != "$LAST_SOURCE_COMMIT" ]; then
+    if [ "$remote_line" != "$OLD_LAST_SOURCE_COMMIT" ]; then
         log "$NAME: source commit changed, queued"
         queue_package "$NAME"
         return 0
@@ -74,11 +74,11 @@ check_vcs_package() {
         return 0
     fi
 
-    state_load "$state_file"
+    eval "$(state_emit_prefixed OLD "$state_file")"
 
     remote_line=$(git ls-remote "$SOURCE_GIT" "$SOURCE_REF" | awk 'NR==1{print $1}')
     [ -n "$remote_line" ] || die "failed to resolve remote ref for $NAME"
-    if [ "$remote_line" != "$LAST_SOURCE_COMMIT" ]; then
+    if [ "$remote_line" != "$OLD_LAST_SOURCE_COMMIT" ]; then
         log "$NAME: source commit changed, queued"
         queue_package "$NAME"
         return 0
@@ -106,7 +106,7 @@ check_vcs_package() {
     [ -f "$predicted_pkgfiles_file" ] || die "probe did not produce predicted_pkgfiles.txt for $NAME"
 
     current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
-    if [ "$current_predicted_pkgfiles" != "$PKGFILES" ]; then
+    if [ "$current_predicted_pkgfiles" != "$OLD_PKGFILES" ]; then
         log "$NAME: predicted pkgfiles changed, queued"
         queue_package "$NAME"
         return 0

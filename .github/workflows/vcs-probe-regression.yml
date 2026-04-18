@@ -3,16 +3,23 @@ name: vcs-probe-regression
 on:
   push:
     paths:
+      - .github/workflows/_build-package.yml
+      - .github/workflows/_remove-package.yml
       - .github/workflows/check-updates.yml
       - .github/workflows/vcs-probe-regression.yml
       - packages/**
       - scripts/**
   pull_request:
     paths:
+      - .github/workflows/_build-package.yml
+      - .github/workflows/_remove-package.yml
       - .github/workflows/check-updates.yml
       - .github/workflows/vcs-probe-regression.yml
       - packages/**
       - scripts/**
+
+permissions:
+  contents: read
 
 jobs:
   probe:
@@ -25,23 +32,9 @@ jobs:
           set -eu
           pacman -Sy --noconfirm --needed git shadow
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Run VCS probe regression test
         run: |
           set -eu
-          chmod +x scripts/*.sh
-          probe_user='ci-probe'
-          probe_home="$RUNNER_TEMP/$probe_user-home"
-          probe_tmp="$RUNNER_TEMP/$probe_user-tmp"
-          mkdir -p "$probe_tmp"
-          if ! id "$probe_user" >/dev/null 2>&1; then
-            useradd --create-home --home-dir "$probe_home" --shell /bin/sh "$probe_user"
-          fi
-          chown -R "$probe_user:$probe_user" "$probe_home" "$probe_tmp"
-          env HOME="$probe_home" TMPDIR="$probe_tmp" su -m "$probe_user" -s /bin/sh -c '
-            set -eu
-            cd "$GITHUB_WORKSPACE"
-            printf "probe_user=%s uid=%s home=%s tmpdir=%s\n" "$(id -un)" "$(id -u)" "$HOME" "${TMPDIR-}" >&2
-            sh scripts/test-vcs-probe.sh
-          '
+          sh scripts/ci/run-probe-user.sh sh scripts/test-vcs-probe.sh

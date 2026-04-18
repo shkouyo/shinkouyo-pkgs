@@ -1,0 +1,2 @@
+external-sources=true
+disable=SC1007,SC1091,SC2034,SC2129,SC2153

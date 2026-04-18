@@ -5,7 +5,7 @@ set -eu
 . "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/common.sh"
 . "$SCRIPT_DIR/state.sh"
 
-require_runtime_env
+require_update_env
 require_cmd aws
 
 tmp_dir=$(mktemp -d)

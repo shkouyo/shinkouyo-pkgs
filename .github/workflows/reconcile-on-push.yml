@@ -11,6 +11,9 @@ concurrency:
   group: ${{ vars.REPO_NAME }}-x86_64
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -20,7 +23,7 @@ jobs:
       has_builds: ${{ steps.plan.outputs.has_builds }}
       has_removals: ${{ steps.plan.outputs.has_removals }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
 
@@ -32,132 +35,30 @@ jobs:
           after="${{ github.sha }}"
           diff_file="$RUNNER_TEMP/diff.txt"
           git diff --name-status "$before" "$after" -- 'packages/*.sh' > "$diff_file"
-          python3 - "$diff_file" <<'PY' >> "$GITHUB_OUTPUT"
-          import json, pathlib, sys
-          diff_path = pathlib.Path(sys.argv[1])
-          builds, removals = [], []
-          for raw in diff_path.read_text().splitlines():
-              if not raw.strip():
-                  continue
-              parts = raw.split("\t")
-              status = parts[0]
-              if status.startswith("R"):
-                  old_path, new_path = parts[1], parts[2]
-                  old_name = pathlib.Path(old_path).stem
-                  new_name = pathlib.Path(new_path).stem
-                  if old_name != "template":
-                      removals.append({"package": old_name})
-                  if new_name != "template":
-                      builds.append({"package": new_name})
-                  continue
-              path = parts[1]
-              name = pathlib.Path(path).stem
-              if name == "template":
-                  continue
-              if status == "D":
-                  removals.append({"package": name})
-              else:
-                  builds.append({"package": name})
-          print(f"build_matrix={json.dumps({'include': builds})}")
-          print(f"remove_matrix={json.dumps({'include': removals})}")
-          print(f"has_builds={'true' if builds else 'false'}")
-          print(f"has_removals={'true' if removals else 'false'}")
-          PY
+          python3 scripts/ci/package-diff-plan.py "$diff_file" >> "$GITHUB_OUTPUT"
 
   remove:
     needs: plan
     if: needs.plan.outputs.has_removals == 'true'
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix: ${{ fromJson(needs.plan.outputs.remove_matrix) }}
-    env:
-      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
-      PACKAGER: ${{ vars.PACKAGER }}
-      REPO_NAME: ${{ vars.REPO_NAME }}
-      S3_BUCKET: ${{ vars.S3_BUCKET }}
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
-      S3_REGION: ${{ vars.S3_REGION }}
-      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ vars.S3_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
-    steps:
-      - uses: actions/checkout@v6
-
-
-      - name: Remove package from repo
-        run: |
-          set -eu
-          chmod +x scripts/*.sh
-          scripts/remove.sh "${{ matrix.package }}"
+    uses: ./.github/workflows/_remove-package.yml
+    with:
+      package: ${{ matrix.package }}
+    secrets: inherit
 
   build:
     needs:
       - plan
       - remove
     if: ${{ always() && needs.plan.outputs.has_builds == 'true' && (needs.plan.outputs.has_removals == 'false' || needs.remove.result == 'success') }}
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix: ${{ fromJson(needs.plan.outputs.build_matrix) }}
-    env:
-      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
-      PACKAGER: ${{ vars.PACKAGER }}
-      REPO_NAME: ${{ vars.REPO_NAME }}
-      S3_BUCKET: ${{ vars.S3_BUCKET }}
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
-      S3_REGION: ${{ vars.S3_REGION }}
-      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ vars.S3_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
-    steps:
-      - uses: actions/checkout@v6
-
-
-      - name: Prepare build context
-        id: prepare
-        run: |
-          set -eu
-          chmod +x scripts/*.sh
-          context_dir="$GITHUB_WORKSPACE/.ci-tmp/build-${{ matrix.package }}"
-          scripts/build.sh prepare "packages/${{ matrix.package }}.sh" "$context_dir"
-          cat "$context_dir/github.env" >> "$GITHUB_ENV"
-          . "$context_dir/context.env"
-          action_path=$(printf '%s\n' "$BUILD_DIR" | sed "s#^$GITHUB_WORKSPACE/##")
-          printf 'context_dir=%s\n' "$context_dir" >> "$GITHUB_OUTPUT"
-          printf 'build_dir=%s\n' "$BUILD_DIR" >> "$GITHUB_OUTPUT"
-          printf 'action_path=%s\n' "$action_path" >> "$GITHUB_OUTPUT"
-
-      - name: Build package
-        uses: heyhusen/archlinux-package-action@v3.0.0
-        with:
-          path: ${{ steps.prepare.outputs.action_path }}
-          flags: -sC --noconfirm
-          namcap: false
-          srcinfo: false
-          aur: true
-          archlinux_keyring: false
-
-      - name: Collect artifacts
-        run: |
-          set -eu
-          scripts/build.sh collect "${{ steps.prepare.outputs.context_dir }}"
-
-      - name: Publish artifacts
-        run: |
-          set -eu
-          scripts/publish.sh "${{ steps.prepare.outputs.context_dir }}"
-
-      - name: Cleanup build context
-        if: ${{ always() }}
-        run: |
-          set -eu
-          rm -rf "${{ steps.prepare.outputs.context_dir }}"
+    uses: ./.github/workflows/_build-package.yml
+    with:
+      package: ${{ matrix.package }}
+    secrets: inherit

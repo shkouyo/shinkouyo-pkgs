@@ -1,0 +1,70 @@
+name: _build-package
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Package name without .sh
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      PACKAGER: ${{ vars.PACKAGER }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      S3_REGION: ${{ vars.S3_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.S3_REGION }}
+      AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Validate manifest
+        run: |
+          set -eu
+          test -n "${{ inputs.package }}"
+          test "${{ inputs.package }}" != "template"
+          test -f "packages/${{ inputs.package }}.sh"
+
+      - name: Prepare build context
+        id: prepare
+        run: |
+          set -eu
+          sh scripts/ci/prepare-build-context.sh "packages/${{ inputs.package }}.sh" "$GITHUB_WORKSPACE/.ci-tmp/build-${{ inputs.package }}"
+
+      - name: Build package
+        uses: heyhusen/archlinux-package-action@d2f80c53bfd34d9a6ed71dd97d5cae35d9645670 # v3.0.0
+        with:
+          path: ${{ steps.prepare.outputs.action_path }}
+          flags: -sC --noconfirm
+          namcap: false
+          srcinfo: false
+          aur: true
+          archlinux_keyring: false
+
+      - name: Collect artifacts
+        run: |
+          set -eu
+          sh scripts/build.sh collect "${{ steps.prepare.outputs.context_dir }}"
+
+      - name: Publish artifacts
+        run: |
+          set -eu
+          sh scripts/publish.sh "${{ steps.prepare.outputs.context_dir }}"
+
+      - name: Cleanup build context
+        if: ${{ always() }}
+        run: |
+          set -eu
+          rm -rf "${{ steps.prepare.outputs.context_dir }}"

@@ -57,6 +57,23 @@ state_load() {
     [ -n "${BUILT_AT-}" ] || die "missing BUILT_AT in $state_file"
 }
 
+state_emit_prefixed() {
+    prefix=$1
+    state_file=$2
+
+    (
+        state_load "$state_file"
+        printf '%s_NAME=%s\n' "$prefix" "$(shell_quote "$NAME")"
+        printf '%s_SOURCE_GIT=%s\n' "$prefix" "$(shell_quote "$SOURCE_GIT")"
+        printf '%s_SOURCE_REF=%s\n' "$prefix" "$(shell_quote "$SOURCE_REF")"
+        printf '%s_LAST_SOURCE_COMMIT=%s\n' "$prefix" "$(shell_quote "$LAST_SOURCE_COMMIT")"
+        printf '%s_PKGNAMES=%s\n' "$prefix" "$(shell_quote "$PKGNAMES")"
+        printf '%s_PKGFILES=%s\n' "$prefix" "$(shell_quote "$PKGFILES")"
+        printf '%s_VCS_FINGERPRINT=%s\n' "$prefix" "$(shell_quote "${VCS_FINGERPRINT-}")"
+        printf '%s_BUILT_AT=%s\n' "$prefix" "$(shell_quote "$BUILT_AT")"
+    )
+}
+
 state_download() {
     name=$1
     dest=$2

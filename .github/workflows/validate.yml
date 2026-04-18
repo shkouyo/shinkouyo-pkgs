@@ -1,0 +1,48 @@
+name: validate
+
+on:
+  push:
+    paths:
+      - .github/workflows/**
+      - packages/**
+      - scripts/**
+      - README.md
+  pull_request:
+    paths:
+      - .github/workflows/**
+      - packages/**
+      - scripts/**
+      - README.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Shell syntax
+        run: |
+          set -eu
+          for file in scripts/*.sh scripts/ci/*.sh scripts/lib/*.sh packages/*.sh; do
+            sh -n "$file"
+          done
+
+      - name: ShellCheck
+        run: |
+          set -eu
+          shellcheck scripts/*.sh scripts/ci/*.sh scripts/lib/*.sh packages/*.sh
+
+      - name: Script smoke tests
+        run: |
+          set -eu
+          sh scripts/test-state-compat.sh
+          python3 scripts/test-package-diff-plan.py
+
+      - name: Workflow YAML parse
+        run: |
+          set -eu
+          ruby -e 'require "yaml"; Dir[".github/workflows/*.yml"].each { |path| YAML.load_file(path, aliases: true) }'
