@@ -126,8 +126,20 @@ run_probe_makepkg_in_container() {
         chown -R "$PROBE_UID:$PROBE_GID" "$CONTEXT_DIR"
         chmod -R u+rwX "$CONTEXT_DIR"
 
-        su "$user_name" -s /bin/sh -c \
-            ". \"$CONTEXT_DIR/context.env\"; . \"$MANIFEST_PATH\"; build_env; export PKGDEST PACKAGER HOME=\"$PROBE_HOME\"; makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null; makepkg --packagelist --nodeps --skipinteg --holdver -p \"\$BUILD_PKGBUILD\""
+        cat >"$CONTEXT_DIR/probe.sh" <<EOF
+#!/bin/sh
+set -eu
+. "$CONTEXT_DIR/context.env"
+. "\$MANIFEST_PATH"
+build_env
+export PKGDEST PACKAGER HOME="$PROBE_HOME"
+makepkg --nobuild --nodeps --skipinteg -p "\$BUILD_PKGBUILD" >/dev/null
+makepkg --packagelist --nodeps --skipinteg --holdver -p "\$BUILD_PKGBUILD"
+EOF
+        chown "$PROBE_UID:$PROBE_GID" "$CONTEXT_DIR/probe.sh"
+        chmod 700 "$CONTEXT_DIR/probe.sh"
+
+        su "$user_name" -s /bin/sh -c "$CONTEXT_DIR/probe.sh"
         '
 }
 
