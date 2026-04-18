@@ -136,11 +136,6 @@ jobs:
           printf 'build_dir=%s\n' "$BUILD_DIR" >> "$GITHUB_OUTPUT"
           printf 'action_path=%s\n' "$action_path" >> "$GITHUB_OUTPUT"
 
-      - name: Seed VCS fingerprint
-        run: |
-          set -eu
-          scripts/build.sh seed-vcs-fingerprint "${{ steps.prepare.outputs.context_dir }}"
-
       - name: Build package
         uses: heyhusen/archlinux-package-action@v3.0.0
         with:

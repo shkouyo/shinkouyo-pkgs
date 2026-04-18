@@ -64,18 +64,11 @@ check_vcs_package() {
     fi
 
     state_load "$state_file"
-    previous_vcs_fingerprint=$VCS_FINGERPRINT
 
     remote_line=$(git ls-remote "$SOURCE_GIT" "$SOURCE_REF" | awk 'NR==1{print $1}')
     [ -n "$remote_line" ] || die "failed to resolve remote ref for $NAME"
     if [ "$remote_line" != "$LAST_SOURCE_COMMIT" ]; then
         log "$NAME: source commit changed, queued"
-        queue_package "$NAME"
-        return 0
-    fi
-
-    if [ -z "$previous_vcs_fingerprint" ]; then
-        log "$NAME: missing vcs fingerprint, queued"
         queue_package "$NAME"
         return 0
     fi
@@ -94,12 +87,12 @@ check_vcs_package() {
         return 0
     fi
 
-    vcs_fingerprint_file="$probe_dir/vcs_fingerprint.txt"
-    [ -f "$vcs_fingerprint_file" ] || die "probe did not produce vcs_fingerprint.txt for $NAME"
+    predicted_pkgfiles_file="$probe_dir/predicted_pkgfiles.txt"
+    [ -f "$predicted_pkgfiles_file" ] || die "probe did not produce predicted_pkgfiles.txt for $NAME"
 
-    current_vcs_fingerprint=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
-    if [ "$current_vcs_fingerprint" != "$previous_vcs_fingerprint" ]; then
-        log "$NAME: vcs fingerprint changed, queued"
+    current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
+    if [ "$current_predicted_pkgfiles" != "$PKGFILES" ]; then
+        log "$NAME: predicted pkgfiles changed, queued"
         queue_package "$NAME"
         return 0
     fi

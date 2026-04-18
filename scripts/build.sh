@@ -11,7 +11,6 @@ usage() {
 usage:
   build.sh prepare <manifest> <context_dir>
   build.sh probe-vcs <manifest> <context_dir>
-  build.sh seed-vcs-fingerprint <context_dir>
   build.sh collect <context_dir>
 EOF
     exit 1
@@ -79,107 +78,36 @@ prepare() {
     prepare_context "$1" "$2"
 }
 
-vcs_fingerprint_from_srcdir() {
-    srcdir_path=$1
-    [ -d "$srcdir_path" ] || {
-        printf '\n'
-        return 0
-    }
-
-    tmp_file=$(mktemp)
-
-    find "$srcdir_path" \( -name .git -o -name .hg -o -name .svn -o -name .fslckout -o -name .bzr \) | while IFS= read -r marker; do
-        [ -n "$marker" ] || continue
-        checkout_dir=$(dirname "$marker")
-        rel_dir=${checkout_dir#"$srcdir_path"/}
-        [ "$checkout_dir" = "$srcdir_path" ] && rel_dir='.'
-
-        case $(basename "$marker") in
-            .git)
-                require_cmd git
-                revision=$(git -C "$checkout_dir" rev-parse HEAD 2>/dev/null) || die "failed to resolve git revision for $checkout_dir"
-                printf 'git:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
-                ;;
-            .hg)
-                require_cmd hg
-                revision=$(hg -R "$checkout_dir" id -i 2>/dev/null) || die "failed to resolve hg revision for $checkout_dir"
-                revision=${revision%%+}
-                printf 'hg:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
-                ;;
-            .svn)
-                require_cmd svn
-                revision=$(svn info --show-item revision "$checkout_dir" 2>/dev/null) || die "failed to resolve svn revision for $checkout_dir"
-                printf 'svn:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
-                ;;
-            .fslckout)
-                require_cmd fossil
-                revision=$(fossil info -R "$marker" 2>/dev/null | awk '/^checkout:/ {print $2; exit}') || die "failed to resolve fossil revision for $checkout_dir"
-                [ -n "$revision" ] || die "failed to parse fossil revision for $checkout_dir"
-                printf 'fossil:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
-                ;;
-            .bzr)
-                require_cmd bzr
-                revision=$(bzr revno "$checkout_dir" 2>/dev/null) || die "failed to resolve bzr revision for $checkout_dir"
-                printf 'bzr:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
-                ;;
-        esac
-    done
-
-    if [ -s "$tmp_file" ]; then
-        LC_ALL=C sort -u "$tmp_file" | tr '\n' ' ' | sed 's/[[:space:]]*$//'
-    else
-        printf '\n'
-    fi
-    rm -f "$tmp_file"
-}
-
-run_probe_makepkg() {
+run_probe_nobuild() {
     build_env
     export PKGDEST PACKAGER
     makepkg --nobuild --nodeps --skipinteg -p "$BUILD_PKGBUILD" >/dev/null
 }
 
+run_probe_packagelist() {
+    build_env
+    export PKGDEST PACKAGER
+    makepkg --packagelist --nodeps --skipinteg --holdver -p "$BUILD_PKGBUILD"
+}
+
 run_probe_makepkg_in_container() {
     command -v docker >/dev/null 2>&1 || die "probe-vcs requires either makepkg or docker"
+
+    probe_uid=$(id -u)
+    probe_gid=$(id -g)
+    probe_home="$context_dir/home"
+    mkdir -p "$probe_home"
+    chmod a+rwX "$probe_home"
 
     docker run --rm \
         -v "$ROOT_DIR:$ROOT_DIR" \
         -v "$context_dir:$context_dir" \
+        -u "$probe_uid:$probe_gid" \
+        -e "HOME=$probe_home" \
         -w "$BUILD_DIR" \
         archlinux:multilib-devel \
         sh -eu -c \
-        ". \"$context_dir/context.env\"; . \"$MANIFEST_PATH\"; build_env; export PKGDEST PACKAGER; makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null"
-}
-
-write_vcs_fingerprint() {
-    vcs_fingerprint_file=$1
-    vcs_fingerprint=$(vcs_fingerprint_from_srcdir "$BUILD_DIR/src")
-    printf '%s\n' "$vcs_fingerprint" >"$vcs_fingerprint_file"
-}
-
-seed_vcs_fingerprint() {
-    context_dir=$1
-    # shellcheck disable=SC1090
-    . "$context_dir/context.env"
-    # shellcheck disable=SC1090
-    . "$MANIFEST_PATH"
-
-    vcs_fingerprint_file="$context_dir/vcs_fingerprint.txt"
-    : >"$vcs_fingerprint_file"
-    [ "${UPDATE_VCS:-0}" = "1" ] || return 0
-
-    (
-        cd "$BUILD_DIR"
-        if command -v makepkg >/dev/null 2>&1; then
-            run_probe_makepkg
-        else
-            run_probe_makepkg_in_container
-        fi
-    )
-
-    write_vcs_fingerprint "$vcs_fingerprint_file"
-    current_vcs_fingerprint=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
-    [ -n "$current_vcs_fingerprint" ] || die "failed to determine vcs fingerprint for $NAME"
+        ". \"$context_dir/context.env\"; . \"$MANIFEST_PATH\"; build_env; export PKGDEST PACKAGER HOME; makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null; makepkg --packagelist --nodeps --skipinteg --holdver -p \"\$BUILD_PKGBUILD\""
 }
 
 probe_vcs() {
@@ -187,7 +115,27 @@ probe_vcs() {
     context_dir=$2
 
     prepare_context "$manifest_path" "$context_dir"
-    seed_vcs_fingerprint "$context_dir"
+    # shellcheck disable=SC1090
+    . "$context_dir/context.env"
+
+    predicted_pkgfiles_file="$context_dir/predicted_pkgfiles.txt"
+    : >"$predicted_pkgfiles_file"
+
+    if command -v makepkg >/dev/null 2>&1; then
+        (
+            cd "$BUILD_DIR"
+            run_probe_nobuild
+            run_probe_packagelist
+        )
+    else
+        run_probe_makepkg_in_container
+    fi | while IFS= read -r pkgpath; do
+        [ -n "$pkgpath" ] || continue
+        basename "$pkgpath"
+    done | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$predicted_pkgfiles_file"
+
+    current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
+    [ -n "$current_predicted_pkgfiles" ] || die "probe did not predict any package files for $NAME"
 }
 
 collect() {
@@ -197,8 +145,6 @@ collect() {
 
     # shellcheck disable=SC1090
     . "$context_dir/context.env"
-    # shellcheck disable=SC1090
-    . "$MANIFEST_PATH"
 
     artifact_list_file="$context_dir/artifacts.list"
     : >"$artifact_list_file"
@@ -235,16 +181,6 @@ collect() {
     PKGNAMES=$pkgnames
     PKGFILES=$pkgfiles
     VCS_FINGERPRINT=''
-    if [ "${UPDATE_VCS:-0}" = "1" ]; then
-        vcs_fingerprint_file="$context_dir/vcs_fingerprint.txt"
-        if [ -f "$vcs_fingerprint_file" ]; then
-            VCS_FINGERPRINT=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
-        fi
-        if [ -z "$VCS_FINGERPRINT" ]; then
-            VCS_FINGERPRINT=$(vcs_fingerprint_from_srcdir "$BUILD_DIR/src")
-        fi
-        [ -n "$VCS_FINGERPRINT" ] || die "missing vcs fingerprint for $NAME"
-    fi
     export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES VCS_FINGERPRINT BUILT_AT
     state_write_file "$context_dir/state.env"
 }
@@ -258,10 +194,6 @@ case $cmd in
     probe-vcs)
         [ "$#" -eq 3 ] || usage
         probe_vcs "$2" "$3"
-        ;;
-    seed-vcs-fingerprint)
-        [ "$#" -eq 2 ] || usage
-        seed_vcs_fingerprint "$2"
         ;;
     collect)
         [ "$#" -eq 2 ] || usage
