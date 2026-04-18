@@ -1,7 +1,7 @@
 # shellcheck disable=all
 
 SCHEMA_VERSION=1
-NAME='pkgbase'
+NAME='mkinitcpio-numlock'
 
 SOURCE_GIT='https://aur.archlinux.org/mkinitcpio-numlock.git'
 SOURCE_REF='master'
