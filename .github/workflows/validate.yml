@@ -36,6 +36,11 @@ jobs:
           set -eu
           shellcheck scripts/*.sh scripts/ci/*.sh scripts/lib/*.sh packages/*.sh
 
+      - name: Manifest lint
+        run: |
+          set -eu
+          sh scripts/lint-manifests.sh
+
       - name: Script smoke tests
         run: |
           set -eu

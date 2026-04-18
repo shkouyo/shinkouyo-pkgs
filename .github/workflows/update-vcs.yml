@@ -1,0 +1,13 @@
+name: update-vcs
+
+on:
+  schedule:
+    - cron: '17 */2 * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    uses: ./.github/workflows/_check-updates.yml
+    with:
+      mode: vcs
+    secrets: inherit

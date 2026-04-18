@@ -4,16 +4,22 @@ on:
   push:
     paths:
       - .github/workflows/_build-package.yml
+      - .github/workflows/_check-updates.yml
       - .github/workflows/_remove-package.yml
       - .github/workflows/check-updates.yml
+      - .github/workflows/update-regular.yml
+      - .github/workflows/update-vcs.yml
       - .github/workflows/vcs-probe-regression.yml
       - packages/**
       - scripts/**
   pull_request:
     paths:
       - .github/workflows/_build-package.yml
+      - .github/workflows/_check-updates.yml
       - .github/workflows/_remove-package.yml
       - .github/workflows/check-updates.yml
+      - .github/workflows/update-regular.yml
+      - .github/workflows/update-vcs.yml
       - .github/workflows/vcs-probe-regression.yml
       - packages/**
       - scripts/**

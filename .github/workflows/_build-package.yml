@@ -35,7 +35,9 @@ jobs:
           set -eu
           test -n "${{ inputs.package }}"
           test "${{ inputs.package }}" != "template"
-          test -f "packages/${{ inputs.package }}.sh"
+          manifest="packages/${{ inputs.package }}.sh"
+          test -f "$manifest"
+          sh scripts/lint-manifests.sh "$manifest"
 
       - name: Prepare build context
         id: prepare

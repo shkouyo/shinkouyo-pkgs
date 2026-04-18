@@ -1,0 +1,13 @@
+name: update-regular
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    uses: ./.github/workflows/_check-updates.yml
+    with:
+      mode: regular
+    secrets: inherit

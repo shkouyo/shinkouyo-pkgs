@@ -1,9 +1,6 @@
 name: check-updates
 
 on:
-  schedule:
-    - cron: '0 19,7 * * *'
-    - cron: '0 2,8,14,20 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -16,130 +13,9 @@ on:
           - regular
           - vcs
 
-concurrency:
-  group: ${{ vars.REPO_NAME }}-x86_64
-  cancel-in-progress: false
-
-permissions:
-  contents: read
-
 jobs:
-  select-mode:
-    runs-on: ubuntu-latest
-    outputs:
-      mode: ${{ steps.mode.outputs.mode }}
-    steps:
-      - name: Print revision
-        run: |
-          set -eu
-          printf 'workflow_sha=%s\n' "$GITHUB_SHA"
-          printf 'probe_version=%s\n' 'vcs-probe-v3'
-
-      - name: Select mode
-        id: mode
-        run: |
-          set -eu
-          mode='all'
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            case "${{ github.event.schedule }}" in
-              '0 19,7 * * *') mode='regular' ;;
-              '0 2,8,14,20 * * *') mode='vcs' ;;
-            esac
-          fi
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.mode }}" ]; then
-            mode='${{ github.event.inputs.mode }}'
-          fi
-          printf 'mode=%s\n' "$mode" >> "$GITHUB_OUTPUT"
-
-  plan-regular:
-    needs: select-mode
-    if: needs.select-mode.outputs.mode == 'all' || needs.select-mode.outputs.mode == 'regular'
-    runs-on: ubuntu-latest
-    env:
-      REPO_NAME: ${{ vars.REPO_NAME }}
-      S3_BUCKET: ${{ vars.S3_BUCKET }}
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
-      S3_REGION: ${{ vars.S3_REGION }}
-      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ vars.S3_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
-    outputs:
-      packages: ${{ steps.queue.outputs.packages }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Build regular queue
-        id: queue
-        run: |
-          set -eu
-          sh scripts/ci/queue-check-updates.sh regular
-
-  plan-vcs:
-    needs: select-mode
-    if: needs.select-mode.outputs.mode == 'all' || needs.select-mode.outputs.mode == 'vcs'
-    runs-on: ubuntu-latest
-    container:
-      image: archlinux:multilib-devel
-    env:
-      PACKAGER: ${{ vars.PACKAGER }}
-      REPO_NAME: ${{ vars.REPO_NAME }}
-      S3_BUCKET: ${{ vars.S3_BUCKET }}
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
-      S3_REGION: ${{ vars.S3_REGION }}
-      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ vars.S3_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
-    outputs:
-      packages: ${{ steps.queue.outputs.packages }}
-    steps:
-      - name: Install planning dependencies
-        run: |
-          set -eu
-          pacman -Sy --noconfirm --needed git aws-cli shadow
-
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Build VCS queue
-        id: queue
-        run: |
-          set -eu
-          sh scripts/ci/queue-check-updates.sh vcs
-
-  merge-plan:
-    needs:
-      - select-mode
-      - plan-regular
-      - plan-vcs
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.merge.outputs.matrix }}
-      has_items: ${{ steps.merge.outputs.has_items }}
-      mode: ${{ needs.select-mode.outputs.mode }}
-    steps:
-      - name: Merge plan outputs
-        id: merge
-        env:
-          REGULAR_RESULT: ${{ needs.plan-regular.result }}
-          REGULAR_PACKAGES: ${{ needs.plan-regular.outputs.packages }}
-          VCS_RESULT: ${{ needs.plan-vcs.result }}
-          VCS_PACKAGES: ${{ needs.plan-vcs.outputs.packages }}
-        run: |
-          set -eu
-          python3 scripts/ci/merge-package-plans.py >> "$GITHUB_OUTPUT"
-
-  build:
-    needs: merge-plan
-    if: needs.merge-plan.outputs.has_items == 'true'
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix: ${{ fromJson(needs.merge-plan.outputs.matrix) }}
-    uses: ./.github/workflows/_build-package.yml
+  run:
+    uses: ./.github/workflows/_check-updates.yml
     with:
-      package: ${{ matrix.package }}
+      mode: ${{ github.event.inputs.mode || 'all' }}
     secrets: inherit
