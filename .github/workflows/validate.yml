@@ -45,7 +45,7 @@ jobs:
         run: |
           set -eu
           sh scripts/test-state-compat.sh
-          python3 scripts/test-package-diff-plan.py
+          sh scripts/test-package-diff-plan.sh
 
       - name: Workflow YAML parse
         run: |
