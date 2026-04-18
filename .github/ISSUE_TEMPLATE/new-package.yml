@@ -17,7 +17,7 @@ body:
       options:
         - label: 该软件包的 PKGBUILD 符合 AUR 提交准则
           required: true
-        - label: 该软件包未被 Arch Linux 官方仓库或 archlinuxcn 收录
+        - label: 该软件包未被 Arch Linux 官方仓库收录
           required: true
         - label: 该软件包尚未被请求过
           required: true
