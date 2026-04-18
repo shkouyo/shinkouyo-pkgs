@@ -1,6 +1,6 @@
-name: "🔄 更新软件包 / Update Package"
-description: "请求更新一个已提供的软件包的构建相关配置 / Request to update build-related configuration for a provided package"
-title: "[更新请求 / Update Request] package-name"
+name: "🔄 更新软件包 Update Package"
+description: "请求更新一个已提供的软件包的构建相关配置 Request to update build-related configuration for a provided package"
+title: "[更新请求] package-name"
 labels:
   - "request:update-pkg"
 body:
@@ -9,52 +9,45 @@ body:
       value: |
         请填写您希望更新的软件包信息
         Please fill in the package information you want to update
-        本仓库会自动拉取最新的 PKGBUILD。
-        This repository automatically pulls the latest PKGBUILD.
+        本仓库会自动拉取最新的 PKGBUILD
+        This repository automatically pulls the latest PKGBUILD
         此处 "更新软件包" 主要指修改构建相关配置
         Here, "update package" mainly refers to modifying build-related configuration
 
   - type: checkboxes
     id: precheck
     attributes:
-      label: 提交前确认 / Pre-submission Checklist
+      label: 提交前确认 Pre-submission Checklist
       description: |
-        请在提交前确认以下内容
-        Please confirm the following before submitting
+        请在提交前确认以下内容 Please confirm the following before submitting
       options:
-        - label: 该软件包当前已由本仓库提供 / The package is currently provided by this repository
+        - label: 该软件包当前已由本仓库提供 The package is currently provided by this repository
           required: true
-        - label: 该请求不是单纯的上游版本更新 / The request is not merely an upstream version bump
+        - label: 该请求不是单纯的上游版本更新 The request is not merely an upstream version bump
           required: true
-        - label: 该请求尚未被提交过，或没有重复议题 / The request has not already been submitted or there is no duplicate issue
+        - label: 该请求尚未被提交过, 或没有重复议题 The request has not already been submitted or there is no duplicate issue
           required: true
 
   - type: input
     id: package_name
     attributes:
-      label: 软件包名称 / Package Name
-      description: |
-        请填写需要更新的软件包名称
-        Please enter the name of the package to update
+      label: 软件包名称 Package Name
+      description: 请填写需要更新的软件包名称 Please enter the name of the package to update
     validations:
       required: true
 
   - type: textarea
     id: update_content
     attributes:
-      label: 更新内容 / Update Details
-      description: |
-        请说明希望修改的内容
-        Please describe what you want to change
+      label: 更新内容 Update Details
+      description: 请说明希望修改的内容 Please describe what you want to change
     validations:
       required: true
 
   - type: textarea
     id: update_reason
     attributes:
-      label: 更新原因 / Reason for Update
-      description: |
-        请说明为什么需要这样修改
-        Please explain why this change is needed
+      label: 更新原因 Reason for Update
+      description: 请说明为什么需要这样修改 Please explain why this change is needed
     validations:
       required: false

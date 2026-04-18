@@ -1,54 +1,45 @@
-name: "🗑 移除软件包 / Remove Package"
-description: "请求移除一个已提供的软件包 / Request to remove a provided package"
-title: "[移除请求 / Remove Request] package-name"
+name: "🗑 移除软件包 Remove Package"
+description: "请求移除一个已提供的软件包 Request to remove a provided package"
+title: "[移除请求] package-name"
 labels:
   - "request:remove-pkg"
 body:
   - type: markdown
     attributes:
-      value: |
-        请填写您希望移除的软件包信息
-        Please fill in the package information you want to remove
+      value: 请填写您希望移除的软件包信息 Please fill in the package information you want to remove
 
   - type: checkboxes
     id: precheck
     attributes:
-      label: 提交前确认 / Pre-submission Checklist
-      description: |
-        请在提交前确认以下内容
-        Please confirm the following before submitting
+      label: 提交前确认 Pre-submission Checklist
+      description: 请在提交前确认以下内容 Please confirm the following before submitting
       options:
-        - label: 该软件包当前已由本仓库提供 / The package is currently provided by this repository
+        - label: 该软件包当前已由本仓库提供 The package is currently provided by this repository
           required: true
-        - label: 该请求尚未被提交过，或没有重复议题 / The request has not already been submitted or there is no duplicate issue
+        - label: 该请求尚未被提交过, 或没有重复议题 The request has not already been submitted or there is no duplicate issue
           required: true
 
   - type: input
     id: package_name
     attributes:
-      label: 软件包名称 / Package Name
-      description: |
-        请填写需要移除的软件包名称
-        Please enter the name of the package to remove
+      label: 软件包名称 Package Name
+      description: 请填写需要移除的软件包名称 Please enter the name of the package to remove
     validations:
       required: true
 
   - type: textarea
     id: reason
     attributes:
-      label: 移除原因 / Reason for Removal
-      description: |
-        请明确说明移除原因
-        Please clearly explain the reason for removal
+      label: 移除原因 Reason for Removal
+      description: 请明确说明移除原因 Please clearly explain the reason for removal
     validations:
       required: true
 
   - type: textarea
     id: extra
     attributes:
-      label: 补充说明 / Additional Information
+      label: 补充说明 Additional Information
       description: |
-        如有相关链接, 上游公告, 替代软件包或其它补充信息, 请一并提供
-        If there are relevant links, upstream announcements, alternative packages, or other supplementary information, please provide them as well
+        如有相关链接, 上游公告, 替代软件包或其它补充信息, 请一并提供 If there are relevant links, upstream announcements, alternative packages, or other supplementary information, please provide them as well
     validations:
       required: false
