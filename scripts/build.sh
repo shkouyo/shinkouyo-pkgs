@@ -11,6 +11,7 @@ usage() {
 usage:
   build.sh prepare <manifest> <context_dir>
   build.sh probe-vcs <manifest> <context_dir>
+  build.sh seed-vcs-fingerprint <context_dir>
   build.sh collect <context_dir>
 EOF
     exit 1
@@ -150,17 +151,22 @@ run_probe_makepkg_in_container() {
         ". \"$context_dir/context.env\"; . \"$MANIFEST_PATH\"; build_env; export PKGDEST PACKAGER; makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null"
 }
 
-probe_vcs() {
-    manifest_path=$1
-    context_dir=$2
+write_vcs_fingerprint() {
+    vcs_fingerprint_file=$1
+    vcs_fingerprint=$(vcs_fingerprint_from_srcdir "$BUILD_DIR/src")
+    printf '%s\n' "$vcs_fingerprint" >"$vcs_fingerprint_file"
+}
 
-    prepare_context "$manifest_path" "$context_dir"
-
+seed_vcs_fingerprint() {
+    context_dir=$1
     # shellcheck disable=SC1090
     . "$context_dir/context.env"
+    # shellcheck disable=SC1090
+    . "$MANIFEST_PATH"
 
     vcs_fingerprint_file="$context_dir/vcs_fingerprint.txt"
     : >"$vcs_fingerprint_file"
+    [ "${UPDATE_VCS:-0}" = "1" ] || return 0
 
     (
         cd "$BUILD_DIR"
@@ -171,8 +177,17 @@ probe_vcs() {
         fi
     )
 
-    vcs_fingerprint=$(vcs_fingerprint_from_srcdir "$BUILD_DIR/src")
-    printf '%s\n' "$vcs_fingerprint" >"$vcs_fingerprint_file"
+    write_vcs_fingerprint "$vcs_fingerprint_file"
+    current_vcs_fingerprint=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
+    [ -n "$current_vcs_fingerprint" ] || die "failed to determine vcs fingerprint for $NAME"
+}
+
+probe_vcs() {
+    manifest_path=$1
+    context_dir=$2
+
+    prepare_context "$manifest_path" "$context_dir"
+    seed_vcs_fingerprint "$context_dir"
 }
 
 collect() {
@@ -182,6 +197,8 @@ collect() {
 
     # shellcheck disable=SC1090
     . "$context_dir/context.env"
+    # shellcheck disable=SC1090
+    . "$MANIFEST_PATH"
 
     artifact_list_file="$context_dir/artifacts.list"
     : >"$artifact_list_file"
@@ -217,7 +234,17 @@ collect() {
     BUILT_AT=$(date -u +%FT%TZ)
     PKGNAMES=$pkgnames
     PKGFILES=$pkgfiles
-    VCS_FINGERPRINT=$(vcs_fingerprint_from_srcdir "$BUILD_DIR/src")
+    VCS_FINGERPRINT=''
+    if [ "${UPDATE_VCS:-0}" = "1" ]; then
+        vcs_fingerprint_file="$context_dir/vcs_fingerprint.txt"
+        if [ -f "$vcs_fingerprint_file" ]; then
+            VCS_FINGERPRINT=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
+        fi
+        if [ -z "$VCS_FINGERPRINT" ]; then
+            VCS_FINGERPRINT=$(vcs_fingerprint_from_srcdir "$BUILD_DIR/src")
+        fi
+        [ -n "$VCS_FINGERPRINT" ] || die "missing vcs fingerprint for $NAME"
+    fi
     export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES VCS_FINGERPRINT BUILT_AT
     state_write_file "$context_dir/state.env"
 }
@@ -231,6 +258,10 @@ case $cmd in
     probe-vcs)
         [ "$#" -eq 3 ] || usage
         probe_vcs "$2" "$3"
+        ;;
+    seed-vcs-fingerprint)
+        [ "$#" -eq 2 ] || usage
+        seed_vcs_fingerprint "$2"
         ;;
     collect)
         [ "$#" -eq 2 ] || usage
