@@ -102,12 +102,33 @@ run_probe_makepkg_in_container() {
     docker run --rm \
         -v "$ROOT_DIR:$ROOT_DIR" \
         -v "$context_dir:$context_dir" \
-        -u "$probe_uid:$probe_gid" \
-        -e "HOME=$probe_home" \
+        -e "PROBE_UID=$probe_uid" \
+        -e "PROBE_GID=$probe_gid" \
+        -e "PROBE_HOME=$probe_home" \
+        -e "CONTEXT_DIR=$context_dir" \
         -w "$BUILD_DIR" \
         archlinux:multilib-devel \
         sh -eu -c \
-        ". \"$context_dir/context.env\"; . \"$MANIFEST_PATH\"; build_env; export PKGDEST PACKAGER HOME; makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null; makepkg --packagelist --nodeps --skipinteg --holdver -p \"\$BUILD_PKGBUILD\""
+        '
+        group_name=$(getent group "$PROBE_GID" | awk -F: "NR==1{print \$1}")
+        if [ -z "$group_name" ]; then
+            group_name=probe
+            groupadd -g "$PROBE_GID" "$group_name"
+        fi
+
+        user_name=$(getent passwd "$PROBE_UID" | awk -F: "NR==1{print \$1}")
+        if [ -z "$user_name" ]; then
+            user_name=probe
+            useradd -M -d "$PROBE_HOME" -u "$PROBE_UID" -g "$PROBE_GID" "$user_name"
+        fi
+
+        mkdir -p "$PROBE_HOME"
+        chown -R "$PROBE_UID:$PROBE_GID" "$CONTEXT_DIR"
+        chmod -R u+rwX "$CONTEXT_DIR"
+
+        su "$user_name" -s /bin/sh -c \
+            ". \"$CONTEXT_DIR/context.env\"; . \"$MANIFEST_PATH\"; build_env; export PKGDEST PACKAGER HOME=\"$PROBE_HOME\"; makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null; makepkg --packagelist --nodeps --skipinteg --holdver -p \"\$BUILD_PKGBUILD\""
+        '
 }
 
 probe_vcs() {
@@ -119,7 +140,9 @@ probe_vcs() {
     . "$context_dir/context.env"
 
     predicted_pkgfiles_file="$context_dir/predicted_pkgfiles.txt"
+    raw_pkglist_file="$context_dir/predicted_pkgfiles.raw"
     : >"$predicted_pkgfiles_file"
+    : >"$raw_pkglist_file"
 
     if command -v makepkg >/dev/null 2>&1; then
         (
@@ -129,10 +152,12 @@ probe_vcs() {
         )
     else
         run_probe_makepkg_in_container
-    fi | while IFS= read -r pkgpath; do
+    fi >"$raw_pkglist_file"
+
+    while IFS= read -r pkgpath; do
         [ -n "$pkgpath" ] || continue
         basename "$pkgpath"
-    done | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$predicted_pkgfiles_file"
+    done <"$raw_pkglist_file" | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$predicted_pkgfiles_file"
 
     current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
     [ -n "$current_predicted_pkgfiles" ] || die "probe did not predict any package files for $NAME"
