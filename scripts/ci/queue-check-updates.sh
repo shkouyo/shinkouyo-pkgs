@@ -27,4 +27,4 @@ else
     sh "$ROOT_DIR/scripts/check-updates.sh" regular | LC_ALL=C sort -u >"$packages_txt"
 fi
 
-printf 'packages=%s\n' "$(python3 "$ROOT_DIR/scripts/ci/json-array.py" "$packages_txt")" >>"$GITHUB_OUTPUT"
+printf 'packages=%s\n' "$(sh "$ROOT_DIR/scripts/ci/json-array.sh" "$packages_txt")" >>"$GITHUB_OUTPUT"
