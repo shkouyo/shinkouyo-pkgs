@@ -10,12 +10,13 @@ usage() {
     cat >&2 <<'EOF'
 usage:
   build.sh prepare <manifest> <context_dir>
+  build.sh probe-vcs <manifest> <context_dir>
   build.sh collect <context_dir>
 EOF
     exit 1
 }
 
-prepare() {
+prepare_context() {
     manifest_path=$1
     context_dir=$2
 
@@ -73,6 +74,35 @@ prepare() {
     } >"$context_dir/context.env"
 }
 
+prepare() {
+    prepare_context "$1" "$2"
+}
+
+probe_vcs() {
+    manifest_path=$1
+    context_dir=$2
+
+    prepare_context "$manifest_path" "$context_dir"
+    require_cmd makepkg
+
+    # shellcheck disable=SC1090
+    . "$context_dir/context.env"
+    # shellcheck disable=SC1090
+    . "$context_dir/github.env"
+
+    predicted_pkgfiles_file="$context_dir/predicted_pkgfiles.txt"
+    : >"$predicted_pkgfiles_file"
+
+    (
+        cd "$BUILD_DIR"
+        makepkg --nobuild --nodeps --skipinteg -p "$BUILD_PKGBUILD" >/dev/null
+        makepkg --packagelist --nodeps --noextract --noprepare -p "$BUILD_PKGBUILD"
+    ) | while IFS= read -r pkgpath; do
+        [ -n "$pkgpath" ] || continue
+        basename "$pkgpath"
+    done | LC_ALL=C sort -u >"$predicted_pkgfiles_file"
+}
+
 collect() {
     context_dir=$1
     require_runtime_env
@@ -124,6 +154,10 @@ case $cmd in
     prepare)
         [ "$#" -eq 3 ] || usage
         prepare "$2" "$3"
+        ;;
+    probe-vcs)
+        [ "$#" -eq 3 ] || usage
+        probe_vcs "$2" "$3"
         ;;
     collect)
         [ "$#" -eq 2 ] || usage
