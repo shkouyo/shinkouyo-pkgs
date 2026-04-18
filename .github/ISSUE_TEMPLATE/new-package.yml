@@ -1,0 +1,42 @@
+name: "➕ 新增软件包"
+description: "请求新增一个软件包"
+title: "[新增请求] pkgbase"
+labels:
+  - "request:new-pkg"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请填写您希望新增的软件包信息
+
+  - type: checkboxes
+    id: precheck
+    attributes:
+      label: 提交前确认
+      description: 请在提交前确认以下内容
+      options:
+        - label: 该软件包的 PKGBUILD 符合 AUR 提交准则
+          required: true
+        - label: 该软件包未被 Arch Linux 官方仓库或 archlinuxcn 收录
+          required: true
+        - label: 该软件包尚未被请求过
+          required: true
+        - label: 该软件包的构建过程不会显著占用构建资源或耗时过长
+          required: false
+
+  - type: input
+    id: upstream
+    attributes:
+      label: 上游地址
+      description: 请提供 AUR 链接, 或包含 PKGBUILD 的上游 Git 仓库地址
+      placeholder: "https://aur.archlinux.org/pkgbase.git"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 简述
+      description: 请简要说明为什么需要这个软件包, 它适合哪些用户, 以及它相较于其它可选方案的具体优势
+    validations:
+      required: false
