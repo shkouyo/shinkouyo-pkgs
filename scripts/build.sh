@@ -16,6 +16,20 @@ EOF
     exit 1
 }
 
+PROBE_LOG_TAIL_LINES=50
+PROBE_VERSION='vcs-probe-v2'
+
+print_log_tail() {
+    label=$1
+    file=$2
+
+    [ -f "$file" ] || return 0
+    [ -s "$file" ] || return 0
+
+    log "$label (last $PROBE_LOG_TAIL_LINES lines):"
+    tail -n "$PROBE_LOG_TAIL_LINES" "$file" >&2
+}
+
 prepare_context() {
     manifest_path=$1
     context_dir=$2
@@ -162,12 +176,14 @@ probe_vcs() {
     : >"$raw_pkglist_file"
 
     if command -v makepkg >/dev/null 2>&1; then
+        log "probe[$PROBE_VERSION]: backend=makepkg package=$NAME"
         (
             cd "$BUILD_DIR"
             run_probe_nobuild
             run_probe_packagelist
         ) >"$probe_stdout_file" 2>"$probe_stderr_file"
     else
+        log "probe[$PROBE_VERSION]: backend=docker package=$NAME image=archlinux:multilib-devel"
         run_probe_makepkg_in_container >"$probe_stdout_file" 2>"$probe_stderr_file"
     fi
 
@@ -183,7 +199,11 @@ probe_vcs() {
     done <"$raw_pkglist_file" | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$predicted_pkgfiles_file"
 
     current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
-    [ -n "$current_predicted_pkgfiles" ] || die "probe did not predict any package files for $NAME"
+    if [ -z "$current_predicted_pkgfiles" ]; then
+        print_log_tail "probe[$PROBE_VERSION]: stdout for $NAME" "$probe_stdout_file"
+        print_log_tail "probe[$PROBE_VERSION]: stderr for $NAME" "$probe_stderr_file"
+        die "probe did not predict any package files for $NAME"
+    fi
 }
 
 collect() {

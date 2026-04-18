@@ -28,6 +28,17 @@ queue_package() {
     printf '%s\n' "$1"
 }
 
+log_file_tail() {
+    label=$1
+    file=$2
+
+    [ -f "$file" ] || return 0
+    [ -s "$file" ] || return 0
+
+    log "$label:"
+    tail -n 50 "$file" >&2
+}
+
 check_regular_package() {
     manifest_source_git=$SOURCE_GIT
     manifest_source_ref=$SOURCE_REF
@@ -82,6 +93,10 @@ check_vcs_package() {
         if [ -n "$probe_error" ]; then
             log "$NAME: probe error: $probe_error"
         fi
+        log_file_tail "$NAME: probe stderr tail" "$probe_stderr"
+        log_file_tail "$NAME: probe stdout tail" "$probe_stdout"
+        log_file_tail "$NAME: predicted stderr tail" "$probe_dir/predicted_pkgfiles.stderr"
+        log_file_tail "$NAME: predicted stdout tail" "$probe_dir/predicted_pkgfiles.stdout"
         log "$NAME: probe failed, queued"
         queue_package "$NAME"
         return 0

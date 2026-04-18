@@ -43,6 +43,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Print revision
+        run: |
+          set -eu
+          printf 'workflow_sha=%s\n' "$GITHUB_SHA"
+          printf 'probe_version=%s\n' 'vcs-probe-v2'
 
       - name: Select mode
         id: mode
