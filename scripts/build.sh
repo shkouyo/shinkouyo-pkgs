@@ -78,12 +78,28 @@ prepare() {
     prepare_context "$1" "$2"
 }
 
+run_probe_makepkg() {
+    makepkg --nobuild --nodeps --skipinteg -p "$BUILD_PKGBUILD" >/dev/null
+    makepkg --packagelist --nodeps --noextract --noprepare -p "$BUILD_PKGBUILD"
+}
+
+run_probe_makepkg_in_container() {
+    command -v docker >/dev/null 2>&1 || die "probe-vcs requires either makepkg or docker"
+
+    docker run --rm \
+        -v "$ROOT_DIR:$ROOT_DIR" \
+        -v "$context_dir:$context_dir" \
+        -w "$BUILD_DIR" \
+        archlinux:multilib-devel \
+        sh -eu -c \
+        ". \"$context_dir/context.env\"; . \"$context_dir/github.env\"; run_probe_makepkg() { makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null && makepkg --packagelist --nodeps --noextract --noprepare -p \"\$BUILD_PKGBUILD\"; }; run_probe_makepkg"
+}
+
 probe_vcs() {
     manifest_path=$1
     context_dir=$2
 
     prepare_context "$manifest_path" "$context_dir"
-    require_cmd makepkg
 
     # shellcheck disable=SC1090
     . "$context_dir/context.env"
@@ -95,8 +111,11 @@ probe_vcs() {
 
     (
         cd "$BUILD_DIR"
-        makepkg --nobuild --nodeps --skipinteg -p "$BUILD_PKGBUILD" >/dev/null
-        makepkg --packagelist --nodeps --noextract --noprepare -p "$BUILD_PKGBUILD"
+        if command -v makepkg >/dev/null 2>&1; then
+            run_probe_makepkg
+        else
+            run_probe_makepkg_in_container
+        fi
     ) | while IFS= read -r pkgpath; do
         [ -n "$pkgpath" ] || continue
         basename "$pkgpath"

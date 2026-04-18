@@ -76,7 +76,13 @@ check_vcs_package() {
 
     probe_dir="$tmp_dir/probe"
     mkdir -p "$probe_dir"
-    if ! "$SCRIPT_DIR/build.sh" probe-vcs "$manifest_path" "$probe_dir" >/dev/null 2>&1; then
+    probe_stdout="$tmp_dir/probe.stdout"
+    probe_stderr="$tmp_dir/probe.stderr"
+    if ! "$SCRIPT_DIR/build.sh" probe-vcs "$manifest_path" "$probe_dir" >"$probe_stdout" 2>"$probe_stderr"; then
+        probe_error=$(awk 'NF { line=$0 } END { print line }' "$probe_stderr")
+        if [ -n "$probe_error" ]; then
+            log "$NAME: probe error: $probe_error"
+        fi
         log "$NAME: probe failed, queued"
         queue_package "$NAME"
         return 0
