@@ -119,18 +119,25 @@ jobs:
           probe_user='ci-probe'
           probe_home="$RUNNER_TEMP/$probe_user-home"
           probe_tmp="$RUNNER_TEMP/$probe_user-tmp"
-          mkdir -p "$probe_home" "$probe_tmp"
+          probe_log="$RUNNER_TEMP/plan-vcs.log"
+          packages_raw="$RUNNER_TEMP/packages.raw.txt"
+          packages_txt="$RUNNER_TEMP/packages.txt"
+          mkdir -p "$probe_tmp"
           if ! id "$probe_user" >/dev/null 2>&1; then
             useradd --create-home --home-dir "$probe_home" --shell /bin/sh "$probe_user"
           fi
           chown -R "$probe_user:$probe_user" "$probe_home" "$probe_tmp"
+          : > "$probe_log"
+          : > "$packages_raw"
           env HOME="$probe_home" TMPDIR="$probe_tmp" su -m "$probe_user" -s /bin/sh -c '
             set -eu
             cd "$GITHUB_WORKSPACE"
-            printf "probe_user=%s uid=%s home=%s tmpdir=%s\n" "$(id -un)" "$(id -u)" "$HOME" "${TMPDIR-}"
+            printf "probe_user=%s uid=%s home=%s tmpdir=%s\n" "$(id -un)" "$(id -u)" "$HOME" "${TMPDIR-}" >&2
             scripts/check-updates.sh vcs
-          ' | LC_ALL=C sort -u > "$RUNNER_TEMP/packages.txt"
-          python3 - "$RUNNER_TEMP/packages.txt" <<'PY' >> "$GITHUB_OUTPUT"
+          ' >"$packages_raw" 2>"$probe_log"
+          cat "$probe_log" >&2
+          LC_ALL=C sort -u "$packages_raw" > "$packages_txt"
+          python3 - "$packages_txt" <<'PY' >> "$GITHUB_OUTPUT"
           import json, pathlib, sys
           packages = [line.strip() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.strip()]
           print(f"packages={json.dumps(packages)}")
