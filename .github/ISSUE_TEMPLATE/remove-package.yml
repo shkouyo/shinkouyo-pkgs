@@ -19,8 +19,6 @@ body:
           required: true
         - label: 该请求尚未被提交过，或没有重复议题
           required: true
-        - label: 我已说明请求移除的具体原因
-          required: true
 
   - type: input
     id: package_name
