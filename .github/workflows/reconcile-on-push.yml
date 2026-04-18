@@ -35,7 +35,7 @@ jobs:
           after="${{ github.sha }}"
           diff_file="$RUNNER_TEMP/diff.txt"
           git diff --name-status "$before" "$after" -- 'packages/*.sh' > "$diff_file"
-          python3 scripts/ci/package-diff-plan.py "$diff_file" >> "$GITHUB_OUTPUT"
+          sh scripts/ci/package-diff-plan.sh "$diff_file" >> "$GITHUB_OUTPUT"
 
   remove:
     needs: plan

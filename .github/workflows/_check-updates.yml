@@ -118,7 +118,7 @@ jobs:
           VCS_PACKAGES: ${{ needs.plan-vcs.outputs.packages }}
         run: |
           set -eu
-          python3 scripts/ci/merge-package-plans.py >> "$GITHUB_OUTPUT"
+          sh scripts/ci/merge-package-plans.sh >> "$GITHUB_OUTPUT"
 
   build:
     needs: merge-plan
