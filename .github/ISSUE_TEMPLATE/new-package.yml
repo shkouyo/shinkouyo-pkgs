@@ -1,6 +1,6 @@
 name: "➕ 新增软件包"
 description: "请求新增一个软件包"
-title: "[新增请求] pkgbase"
+title: "[新增请求] package-name"
 labels:
   - "request:new-pkg"
 body:
