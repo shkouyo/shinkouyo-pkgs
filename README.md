@@ -1,5 +1,6 @@
 > [!TIP]  
 > Available for **x86_64** only  
+> **Feel free to request new packages via [Issues](https://github.com/shkouyo/shinkouyo-pkgs/issues/new?template=new-package.yml), or to submit them directly via [Pull Requests](https://github.com/shkouyo/shinkouyo-pkgs/compare)**  
 > [Package list](https://github.com/shkouyo/shinkouyo-pkgs/tree/main/packages)
 
 ```sh
