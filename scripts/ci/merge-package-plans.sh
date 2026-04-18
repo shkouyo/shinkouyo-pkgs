@@ -6,6 +6,7 @@ load_packages() {
     result_key=$1
     packages_key=$2
 
+    result=
     eval "result=\${$result_key-}"
     case $result in
         ''|skipped)
@@ -19,6 +20,7 @@ load_packages() {
             ;;
     esac
 
+    raw=
     eval "raw=\${$packages_key-}"
     [ -n "$raw" ] || return 0
 
