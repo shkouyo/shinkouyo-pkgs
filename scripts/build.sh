@@ -78,11 +78,64 @@ prepare() {
     prepare_context "$1" "$2"
 }
 
+vcs_fingerprint_from_srcdir() {
+    srcdir_path=$1
+    [ -d "$srcdir_path" ] || {
+        printf '\n'
+        return 0
+    }
+
+    tmp_file=$(mktemp)
+
+    find "$srcdir_path" \( -name .git -o -name .hg -o -name .svn -o -name .fslckout -o -name .bzr \) | while IFS= read -r marker; do
+        [ -n "$marker" ] || continue
+        checkout_dir=$(dirname "$marker")
+        rel_dir=${checkout_dir#"$srcdir_path"/}
+        [ "$checkout_dir" = "$srcdir_path" ] && rel_dir='.'
+
+        case $(basename "$marker") in
+            .git)
+                require_cmd git
+                revision=$(git -C "$checkout_dir" rev-parse HEAD 2>/dev/null) || die "failed to resolve git revision for $checkout_dir"
+                printf 'git:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
+                ;;
+            .hg)
+                require_cmd hg
+                revision=$(hg -R "$checkout_dir" id -i 2>/dev/null) || die "failed to resolve hg revision for $checkout_dir"
+                revision=${revision%%+}
+                printf 'hg:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
+                ;;
+            .svn)
+                require_cmd svn
+                revision=$(svn info --show-item revision "$checkout_dir" 2>/dev/null) || die "failed to resolve svn revision for $checkout_dir"
+                printf 'svn:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
+                ;;
+            .fslckout)
+                require_cmd fossil
+                revision=$(fossil info -R "$marker" 2>/dev/null | awk '/^checkout:/ {print $2; exit}') || die "failed to resolve fossil revision for $checkout_dir"
+                [ -n "$revision" ] || die "failed to parse fossil revision for $checkout_dir"
+                printf 'fossil:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
+                ;;
+            .bzr)
+                require_cmd bzr
+                revision=$(bzr revno "$checkout_dir" 2>/dev/null) || die "failed to resolve bzr revision for $checkout_dir"
+                printf 'bzr:%s:%s\n' "$rel_dir" "$revision" >>"$tmp_file"
+                ;;
+        esac
+    done
+
+    if [ -s "$tmp_file" ]; then
+        LC_ALL=C sort -u "$tmp_file" | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+    else
+        printf '\n'
+    fi
+    rm -f "$tmp_file"
+}
+
 run_probe_makepkg() {
     build_env
     export PKGDEST PACKAGER
     makepkg --nobuild --nodeps --skipinteg -p "$BUILD_PKGBUILD" >/dev/null
-    makepkg --packagelist --nodeps --noextract --noprepare -p "$BUILD_PKGBUILD"
 }
 
 run_probe_makepkg_in_container() {
@@ -94,7 +147,7 @@ run_probe_makepkg_in_container() {
         -w "$BUILD_DIR" \
         archlinux:multilib-devel \
         sh -eu -c \
-        ". \"$context_dir/context.env\"; . \"$MANIFEST_PATH\"; build_env; export PKGDEST PACKAGER; makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null; makepkg --packagelist --nodeps --noextract --noprepare -p \"\$BUILD_PKGBUILD\""
+        ". \"$context_dir/context.env\"; . \"$MANIFEST_PATH\"; build_env; export PKGDEST PACKAGER; makepkg --nobuild --nodeps --skipinteg -p \"\$BUILD_PKGBUILD\" >/dev/null"
 }
 
 probe_vcs() {
@@ -106,8 +159,8 @@ probe_vcs() {
     # shellcheck disable=SC1090
     . "$context_dir/context.env"
 
-    predicted_pkgfiles_file="$context_dir/predicted_pkgfiles.txt"
-    : >"$predicted_pkgfiles_file"
+    vcs_fingerprint_file="$context_dir/vcs_fingerprint.txt"
+    : >"$vcs_fingerprint_file"
 
     (
         cd "$BUILD_DIR"
@@ -116,10 +169,10 @@ probe_vcs() {
         else
             run_probe_makepkg_in_container
         fi
-    ) | while IFS= read -r pkgpath; do
-        [ -n "$pkgpath" ] || continue
-        basename "$pkgpath"
-    done | LC_ALL=C sort -u >"$predicted_pkgfiles_file"
+    )
+
+    vcs_fingerprint=$(vcs_fingerprint_from_srcdir "$BUILD_DIR/src")
+    printf '%s\n' "$vcs_fingerprint" >"$vcs_fingerprint_file"
 }
 
 collect() {
@@ -164,7 +217,8 @@ collect() {
     BUILT_AT=$(date -u +%FT%TZ)
     PKGNAMES=$pkgnames
     PKGFILES=$pkgfiles
-    export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES BUILT_AT
+    VCS_FINGERPRINT=$(vcs_fingerprint_from_srcdir "$BUILD_DIR/src")
+    export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES VCS_FINGERPRINT BUILT_AT
     state_write_file "$context_dir/state.env"
 }
 

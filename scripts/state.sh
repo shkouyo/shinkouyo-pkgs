@@ -17,13 +17,14 @@ state_local_path() {
 state_write_file() {
     output_file=$1
     {
-        printf 'STATE_VERSION=1\n'
+        printf 'STATE_VERSION=2\n'
         printf 'NAME=%s\n' "$(shell_quote "$NAME")"
         printf 'SOURCE_GIT=%s\n' "$(shell_quote "$SOURCE_GIT")"
         printf 'SOURCE_REF=%s\n' "$(shell_quote "$SOURCE_REF")"
         printf 'LAST_SOURCE_COMMIT=%s\n' "$(shell_quote "$LAST_SOURCE_COMMIT")"
         printf 'PKGNAMES=%s\n' "$(shell_quote "$PKGNAMES")"
         printf 'PKGFILES=%s\n' "$(shell_quote "$PKGFILES")"
+        printf 'VCS_FINGERPRINT=%s\n' "$(shell_quote "${VCS_FINGERPRINT-}")"
         printf 'BUILT_AT=%s\n' "$(shell_quote "$BUILT_AT")"
     } >"$output_file"
 }
@@ -32,11 +33,21 @@ state_load() {
     state_file=$1
     [ -f "$state_file" ] || die "state not found: $state_file"
 
-    unset STATE_VERSION NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES BUILT_AT 2>/dev/null || :
+    unset STATE_VERSION NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES VCS_FINGERPRINT BUILT_AT 2>/dev/null || :
     # shellcheck disable=SC1090
     . "$state_file"
 
-    [ "${STATE_VERSION-}" = "1" ] || die "unsupported STATE_VERSION in $state_file"
+    case "${STATE_VERSION-}" in
+        1)
+            : "${VCS_FINGERPRINT:=}"
+            ;;
+        2)
+            [ -n "${VCS_FINGERPRINT+x}" ] || die "missing VCS_FINGERPRINT in $state_file"
+            ;;
+        *)
+            die "unsupported STATE_VERSION in $state_file"
+            ;;
+    esac
     [ -n "${NAME-}" ] || die "missing NAME in $state_file"
     [ -n "${SOURCE_GIT-}" ] || die "missing SOURCE_GIT in $state_file"
     [ -n "${SOURCE_REF-}" ] || die "missing SOURCE_REF in $state_file"
