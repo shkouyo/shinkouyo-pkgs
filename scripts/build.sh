@@ -131,6 +131,7 @@ run_probe_makepkg_in_container() {
 set -eu
 . "$CONTEXT_DIR/context.env"
 . "\$MANIFEST_PATH"
+cd "\$BUILD_DIR"
 build_env
 export PKGDEST PACKAGER HOME="$PROBE_HOME"
 makepkg --nobuild --nodeps --skipinteg -p "\$BUILD_PKGBUILD" >/dev/null
@@ -152,8 +153,12 @@ probe_vcs() {
     . "$context_dir/context.env"
 
     predicted_pkgfiles_file="$context_dir/predicted_pkgfiles.txt"
+    probe_stdout_file="$context_dir/predicted_pkgfiles.stdout"
+    probe_stderr_file="$context_dir/predicted_pkgfiles.stderr"
     raw_pkglist_file="$context_dir/predicted_pkgfiles.raw"
     : >"$predicted_pkgfiles_file"
+    : >"$probe_stdout_file"
+    : >"$probe_stderr_file"
     : >"$raw_pkglist_file"
 
     if command -v makepkg >/dev/null 2>&1; then
@@ -161,13 +166,19 @@ probe_vcs() {
             cd "$BUILD_DIR"
             run_probe_nobuild
             run_probe_packagelist
-        )
+        ) >"$probe_stdout_file" 2>"$probe_stderr_file"
     else
-        run_probe_makepkg_in_container
-    fi >"$raw_pkglist_file"
+        run_probe_makepkg_in_container >"$probe_stdout_file" 2>"$probe_stderr_file"
+    fi
+
+    cat "$probe_stdout_file" "$probe_stderr_file" >"$raw_pkglist_file"
 
     while IFS= read -r pkgpath; do
         [ -n "$pkgpath" ] || continue
+        case $pkgpath in
+            *.pkg.tar|*.pkg.tar.*) ;;
+            *) continue ;;
+        esac
         basename "$pkgpath"
     done <"$raw_pkglist_file" | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$predicted_pkgfiles_file"
 
