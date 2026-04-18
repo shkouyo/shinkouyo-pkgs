@@ -47,7 +47,7 @@ jobs:
         run: |
           set -eu
           printf 'workflow_sha=%s\n' "$GITHUB_SHA"
-          printf 'probe_version=%s\n' 'vcs-probe-v2'
+          printf 'probe_version=%s\n' 'vcs-probe-v3'
 
       - name: Select mode
         id: mode

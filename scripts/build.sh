@@ -17,7 +17,7 @@ EOF
 }
 
 PROBE_LOG_TAIL_LINES=50
-PROBE_VERSION='vcs-probe-v2'
+PROBE_VERSION='vcs-probe-v3'
 
 print_log_tail() {
     label=$1
@@ -104,14 +104,42 @@ run_probe_packagelist() {
     makepkg --packagelist --nodeps --skipinteg --holdver -p "$BUILD_PKGBUILD"
 }
 
-run_probe_makepkg_in_container() {
-    command -v docker >/dev/null 2>&1 || die "probe-vcs requires either makepkg or docker"
+probe_extract_pkgfiles() {
+    input_file=$1
+    output_file=$2
 
-    probe_uid=$(id -u)
-    probe_gid=$(id -g)
-    probe_home="$context_dir/home"
-    mkdir -p "$probe_home"
-    chmod a+rwX "$probe_home"
+    while IFS= read -r pkgpath; do
+        [ -n "$pkgpath" ] || continue
+        case $pkgpath in
+            *.pkg.tar|*.pkg.tar.*) ;;
+            *) continue ;;
+        esac
+        basename "$pkgpath"
+    done <"$input_file" | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$output_file"
+}
+
+run_probe_attempt_makepkg() {
+    strategy=$1
+
+    (
+        cd "$BUILD_DIR"
+        case $strategy in
+            packagelist)
+                run_probe_packagelist
+                ;;
+            nobuild-packagelist)
+                run_probe_nobuild
+                run_probe_packagelist
+                ;;
+            *)
+                die "unsupported probe strategy: $strategy"
+                ;;
+        esac
+    ) >"$probe_stdout_file" 2>"$probe_stderr_file"
+}
+
+run_probe_attempt_container() {
+    strategy=$1
 
     docker run --rm \
         -v "$ROOT_DIR:$ROOT_DIR" \
@@ -120,6 +148,7 @@ run_probe_makepkg_in_container() {
         -e "PROBE_GID=$probe_gid" \
         -e "PROBE_HOME=$probe_home" \
         -e "CONTEXT_DIR=$context_dir" \
+        -e "PROBE_STRATEGY=$strategy" \
         -w "$BUILD_DIR" \
         archlinux:multilib-devel \
         sh -eu -c \
@@ -148,14 +177,64 @@ set -eu
 cd "\$BUILD_DIR"
 build_env
 export PKGDEST PACKAGER HOME="$PROBE_HOME"
-makepkg --nobuild --nodeps --skipinteg -p "\$BUILD_PKGBUILD" >/dev/null
-makepkg --packagelist --nodeps --skipinteg --holdver -p "\$BUILD_PKGBUILD"
+case "\$PROBE_STRATEGY" in
+    packagelist)
+        makepkg --packagelist --nodeps --skipinteg --holdver -p "\$BUILD_PKGBUILD"
+        ;;
+    nobuild-packagelist)
+        makepkg --nobuild --nodeps --skipinteg -p "\$BUILD_PKGBUILD" >/dev/null
+        makepkg --packagelist --nodeps --skipinteg --holdver -p "\$BUILD_PKGBUILD"
+        ;;
+    *)
+        printf "%s\n" "unsupported probe strategy: \$PROBE_STRATEGY" >&2
+        exit 1
+        ;;
+esac
 EOF
         chown "$PROBE_UID:$PROBE_GID" "$CONTEXT_DIR/probe.sh"
         chmod 700 "$CONTEXT_DIR/probe.sh"
 
         su "$user_name" -s /bin/sh -c "$CONTEXT_DIR/probe.sh"
-        '
+        ' >"$probe_stdout_file" 2>"$probe_stderr_file"
+}
+
+run_probe_attempt() {
+    strategy=$1
+
+    : >"$probe_stdout_file"
+    : >"$probe_stderr_file"
+    : >"$raw_pkglist_file"
+    : >"$predicted_pkgfiles_file"
+
+    if command -v makepkg >/dev/null 2>&1; then
+        log "probe[$PROBE_VERSION]: backend=makepkg package=$NAME strategy=$strategy"
+        if ! run_probe_attempt_makepkg "$strategy"; then
+            return 1
+        fi
+    else
+        run_probe_makepkg_in_container
+        log "probe[$PROBE_VERSION]: backend=docker package=$NAME image=archlinux:multilib-devel strategy=$strategy"
+        if ! run_probe_attempt_container "$strategy"; then
+            return 1
+        fi
+    fi
+
+    cat "$probe_stdout_file" "$probe_stderr_file" >"$raw_pkglist_file"
+    probe_extract_pkgfiles "$raw_pkglist_file" "$predicted_pkgfiles_file"
+
+    [ -n "$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")" ]
+}
+
+run_probe_makepkg_in_container() {
+    command -v docker >/dev/null 2>&1 || die "probe-vcs requires either makepkg or docker"
+
+    probe_uid=$(id -u)
+    probe_gid=$(id -g)
+    probe_home="$context_dir/home"
+    mkdir -p "$probe_home"
+    chmod a+rwX "$probe_home"
+
+    :
 }
 
 probe_vcs() {
@@ -170,38 +249,31 @@ probe_vcs() {
     probe_stdout_file="$context_dir/predicted_pkgfiles.stdout"
     probe_stderr_file="$context_dir/predicted_pkgfiles.stderr"
     raw_pkglist_file="$context_dir/predicted_pkgfiles.raw"
-    : >"$predicted_pkgfiles_file"
-    : >"$probe_stdout_file"
-    : >"$probe_stderr_file"
-    : >"$raw_pkglist_file"
-
-    if command -v makepkg >/dev/null 2>&1; then
-        log "probe[$PROBE_VERSION]: backend=makepkg package=$NAME"
-        (
-            cd "$BUILD_DIR"
-            run_probe_nobuild
-            run_probe_packagelist
-        ) >"$probe_stdout_file" 2>"$probe_stderr_file"
+    if ! run_probe_attempt packagelist; then
+        print_log_tail "probe[$PROBE_VERSION]: packagelist stdout for $NAME" "$probe_stdout_file"
+        print_log_tail "probe[$PROBE_VERSION]: packagelist stderr for $NAME" "$probe_stderr_file"
+        log "probe[$PROBE_VERSION]: primary strategy failed for $NAME, retrying with nobuild-packagelist"
     else
-        log "probe[$PROBE_VERSION]: backend=docker package=$NAME image=archlinux:multilib-devel"
-        run_probe_makepkg_in_container >"$probe_stdout_file" 2>"$probe_stderr_file"
+        current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
+        if [ -n "$current_predicted_pkgfiles" ]; then
+            return 0
+        fi
+
+        print_log_tail "probe[$PROBE_VERSION]: packagelist stdout for $NAME" "$probe_stdout_file"
+        print_log_tail "probe[$PROBE_VERSION]: packagelist stderr for $NAME" "$probe_stderr_file"
+        log "probe[$PROBE_VERSION]: primary strategy produced no package files for $NAME, retrying with nobuild-packagelist"
     fi
 
-    cat "$probe_stdout_file" "$probe_stderr_file" >"$raw_pkglist_file"
-
-    while IFS= read -r pkgpath; do
-        [ -n "$pkgpath" ] || continue
-        case $pkgpath in
-            *.pkg.tar|*.pkg.tar.*) ;;
-            *) continue ;;
-        esac
-        basename "$pkgpath"
-    done <"$raw_pkglist_file" | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$predicted_pkgfiles_file"
+    if ! run_probe_attempt nobuild-packagelist; then
+        print_log_tail "probe[$PROBE_VERSION]: fallback stdout for $NAME" "$probe_stdout_file"
+        print_log_tail "probe[$PROBE_VERSION]: fallback stderr for $NAME" "$probe_stderr_file"
+        die "probe did not predict any package files for $NAME"
+    fi
 
     current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
     if [ -z "$current_predicted_pkgfiles" ]; then
-        print_log_tail "probe[$PROBE_VERSION]: stdout for $NAME" "$probe_stdout_file"
-        print_log_tail "probe[$PROBE_VERSION]: stderr for $NAME" "$probe_stderr_file"
+        print_log_tail "probe[$PROBE_VERSION]: fallback stdout for $NAME" "$probe_stdout_file"
+        print_log_tail "probe[$PROBE_VERSION]: fallback stderr for $NAME" "$probe_stderr_file"
         die "probe did not predict any package files for $NAME"
     fi
 }
