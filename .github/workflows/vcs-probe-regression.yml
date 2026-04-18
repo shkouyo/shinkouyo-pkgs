@@ -1,0 +1,34 @@
+name: vcs-probe-regression
+
+on:
+  push:
+    paths:
+      - .github/workflows/check-updates.yml
+      - .github/workflows/vcs-probe-regression.yml
+      - packages/**
+      - scripts/**
+  pull_request:
+    paths:
+      - .github/workflows/check-updates.yml
+      - .github/workflows/vcs-probe-regression.yml
+      - packages/**
+      - scripts/**
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:multilib-devel
+    steps:
+      - name: Install probe dependencies
+        run: |
+          set -eu
+          pacman -Sy --noconfirm --needed git
+
+      - uses: actions/checkout@v6
+
+      - name: Run VCS probe regression test
+        run: |
+          set -eu
+          chmod +x scripts/*.sh
+          sh scripts/test-vcs-probe.sh

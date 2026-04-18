@@ -21,28 +21,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  plan:
+  select-mode:
     runs-on: ubuntu-latest
-    env:
-      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
-      PACKAGER: ${{ vars.PACKAGER }}
-      REPO_NAME: ${{ vars.REPO_NAME }}
-      S3_BUCKET: ${{ vars.S3_BUCKET }}
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
-      S3_REGION: ${{ vars.S3_REGION }}
-      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ vars.S3_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
     outputs:
-      matrix: ${{ steps.queue.outputs.matrix }}
-      has_items: ${{ steps.queue.outputs.has_items }}
       mode: ${{ steps.mode.outputs.mode }}
     steps:
-      - uses: actions/checkout@v6
-
       - name: Print revision
         run: |
           set -eu
@@ -65,27 +48,137 @@ jobs:
           fi
           printf 'mode=%s\n' "$mode" >> "$GITHUB_OUTPUT"
 
-      - name: Build queue
+  plan-regular:
+    needs: select-mode
+    if: needs.select-mode.outputs.mode == 'all' || needs.select-mode.outputs.mode == 'regular'
+    runs-on: ubuntu-latest
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      PACKAGER: ${{ vars.PACKAGER }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      S3_REGION: ${{ vars.S3_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.S3_REGION }}
+      AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
+    outputs:
+      packages: ${{ steps.queue.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build regular queue
         id: queue
         run: |
           set -eu
           chmod +x scripts/*.sh
-          scripts/check-updates.sh "${{ steps.mode.outputs.mode }}" | LC_ALL=C sort -u > "$RUNNER_TEMP/packages.txt"
+          scripts/check-updates.sh regular | LC_ALL=C sort -u > "$RUNNER_TEMP/packages.txt"
           python3 - "$RUNNER_TEMP/packages.txt" <<'PY' >> "$GITHUB_OUTPUT"
           import json, pathlib, sys
           packages = [line.strip() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.strip()]
-          print(f"matrix={json.dumps({'include': [{'package': p} for p in packages]})}")
+          print(f"packages={json.dumps(packages)}")
+          PY
+
+  plan-vcs:
+    needs: select-mode
+    if: needs.select-mode.outputs.mode == 'all' || needs.select-mode.outputs.mode == 'vcs'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:multilib-devel
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      PACKAGER: ${{ vars.PACKAGER }}
+      REPO_NAME: ${{ vars.REPO_NAME }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      S3_REGION: ${{ vars.S3_REGION }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.S3_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.S3_REGION }}
+      AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
+    outputs:
+      packages: ${{ steps.queue.outputs.packages }}
+    steps:
+      - name: Install planning dependencies
+        run: |
+          set -eu
+          pacman -Sy --noconfirm --needed git aws-cli
+
+      - uses: actions/checkout@v6
+
+      - name: Build VCS queue
+        id: queue
+        run: |
+          set -eu
+          chmod +x scripts/*.sh
+          scripts/check-updates.sh vcs | LC_ALL=C sort -u > "$RUNNER_TEMP/packages.txt"
+          python3 - "$RUNNER_TEMP/packages.txt" <<'PY' >> "$GITHUB_OUTPUT"
+          import json, pathlib, sys
+          packages = [line.strip() for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+          print(f"packages={json.dumps(packages)}")
+          PY
+
+  merge-plan:
+    needs:
+      - select-mode
+      - plan-regular
+      - plan-vcs
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.merge.outputs.matrix }}
+      has_items: ${{ steps.merge.outputs.has_items }}
+      mode: ${{ needs.select-mode.outputs.mode }}
+    steps:
+      - name: Merge plan outputs
+        id: merge
+        env:
+          REGULAR_RESULT: ${{ needs.plan-regular.result }}
+          REGULAR_PACKAGES: ${{ needs.plan-regular.outputs.packages }}
+          VCS_RESULT: ${{ needs.plan-vcs.result }}
+          VCS_PACKAGES: ${{ needs.plan-vcs.outputs.packages }}
+        run: |
+          set -eu
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          def load_packages(result_key: str, packages_key: str) -> list[str]:
+              result = os.environ.get(result_key, "")
+              if result in {"", "skipped"}:
+                  return []
+              if result != "success":
+                  raise SystemExit(f"{result_key}={result} is not mergeable")
+              raw = os.environ.get(packages_key, "")
+              if not raw:
+                  return []
+              data = json.loads(raw)
+              if not isinstance(data, list):
+                  raise SystemExit(f"{packages_key} is not a JSON array")
+              return [str(item) for item in data if str(item).strip()]
+
+          packages = sorted(set(
+              load_packages("REGULAR_RESULT", "REGULAR_PACKAGES")
+              + load_packages("VCS_RESULT", "VCS_PACKAGES")
+          ))
+          matrix = {"include": [{"package": package} for package in packages]}
+          print(f"matrix={json.dumps(matrix)}")
           print(f"has_items={'true' if packages else 'false'}")
           PY
 
   build:
-    needs: plan
-    if: needs.plan.outputs.has_items == 'true'
+    needs: merge-plan
+    if: needs.merge-plan.outputs.has_items == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       max-parallel: 1
-      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.merge-plan.outputs.matrix) }}
     env:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
@@ -101,7 +194,6 @@ jobs:
       AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
     steps:
       - uses: actions/checkout@v6
-
 
       - name: Prepare build context
         id: prepare

@@ -138,66 +138,6 @@ run_probe_attempt_makepkg() {
     ) >"$probe_stdout_file" 2>"$probe_stderr_file"
 }
 
-run_probe_attempt_container() {
-    strategy=$1
-
-    docker run --rm \
-        -v "$ROOT_DIR:$ROOT_DIR" \
-        -v "$context_dir:$context_dir" \
-        -e "PROBE_UID=$probe_uid" \
-        -e "PROBE_GID=$probe_gid" \
-        -e "PROBE_HOME=$probe_home" \
-        -e "CONTEXT_DIR=$context_dir" \
-        -e "PROBE_STRATEGY=$strategy" \
-        -w "$BUILD_DIR" \
-        archlinux:multilib-devel \
-        sh -eu -c \
-        '
-        group_name=$(getent group "$PROBE_GID" | awk -F: "NR==1{print \$1}")
-        if [ -z "$group_name" ]; then
-            group_name=probe
-            groupadd -g "$PROBE_GID" "$group_name"
-        fi
-
-        user_name=$(getent passwd "$PROBE_UID" | awk -F: "NR==1{print \$1}")
-        if [ -z "$user_name" ]; then
-            user_name=probe
-            useradd -M -d "$PROBE_HOME" -u "$PROBE_UID" -g "$PROBE_GID" "$user_name"
-        fi
-
-        mkdir -p "$PROBE_HOME"
-        chown -R "$PROBE_UID:$PROBE_GID" "$CONTEXT_DIR"
-        chmod -R u+rwX "$CONTEXT_DIR"
-
-        cat >"$CONTEXT_DIR/probe.sh" <<EOF
-#!/bin/sh
-set -eu
-. "$CONTEXT_DIR/context.env"
-. "\$MANIFEST_PATH"
-cd "\$BUILD_DIR"
-build_env
-export PKGDEST PACKAGER HOME="$PROBE_HOME"
-case "\$PROBE_STRATEGY" in
-    packagelist)
-        makepkg --packagelist --nodeps --skipinteg --holdver -p "\$BUILD_PKGBUILD"
-        ;;
-    nobuild-packagelist)
-        makepkg --nobuild --nodeps --skipinteg -p "\$BUILD_PKGBUILD" >/dev/null
-        makepkg --packagelist --nodeps --skipinteg --holdver -p "\$BUILD_PKGBUILD"
-        ;;
-    *)
-        printf "%s\n" "unsupported probe strategy: \$PROBE_STRATEGY" >&2
-        exit 1
-        ;;
-esac
-EOF
-        chown "$PROBE_UID:$PROBE_GID" "$CONTEXT_DIR/probe.sh"
-        chmod 700 "$CONTEXT_DIR/probe.sh"
-
-        su "$user_name" -s /bin/sh -c "$CONTEXT_DIR/probe.sh"
-        ' >"$probe_stdout_file" 2>"$probe_stderr_file"
-}
-
 run_probe_attempt() {
     strategy=$1
 
@@ -206,35 +146,17 @@ run_probe_attempt() {
     : >"$raw_pkglist_file"
     : >"$predicted_pkgfiles_file"
 
-    if command -v makepkg >/dev/null 2>&1; then
-        log "probe[$PROBE_VERSION]: backend=makepkg package=$NAME strategy=$strategy"
-        if ! run_probe_attempt_makepkg "$strategy"; then
-            return 1
-        fi
-    else
-        run_probe_makepkg_in_container
-        log "probe[$PROBE_VERSION]: backend=docker package=$NAME image=archlinux:multilib-devel strategy=$strategy"
-        if ! run_probe_attempt_container "$strategy"; then
-            return 1
-        fi
+    require_cmd makepkg
+
+    log "probe[$PROBE_VERSION]: backend=makepkg package=$NAME strategy=$strategy"
+    if ! run_probe_attempt_makepkg "$strategy"; then
+        return 1
     fi
 
     cat "$probe_stdout_file" "$probe_stderr_file" >"$raw_pkglist_file"
     probe_extract_pkgfiles "$raw_pkglist_file" "$predicted_pkgfiles_file"
 
     [ -n "$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")" ]
-}
-
-run_probe_makepkg_in_container() {
-    command -v docker >/dev/null 2>&1 || die "probe-vcs requires either makepkg or docker"
-
-    probe_uid=$(id -u)
-    probe_gid=$(id -g)
-    probe_home="$context_dir/home"
-    mkdir -p "$probe_home"
-    chmod a+rwX "$probe_home"
-
-    :
 }
 
 probe_vcs() {
