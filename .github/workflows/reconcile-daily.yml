@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ vars.REPO_NAME }}-x86_64
+  group: ${{ vars.REPO_NAME }}-x86_64-r2-write
   cancel-in-progress: false
 
 permissions:
@@ -15,6 +15,7 @@ permissions:
 jobs:
   reconcile:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     env:
       REPO_NAME: ${{ vars.REPO_NAME }}
       S3_BUCKET: ${{ vars.S3_BUCKET }}

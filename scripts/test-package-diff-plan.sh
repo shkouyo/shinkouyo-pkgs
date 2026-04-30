@@ -23,11 +23,25 @@ run_case() {
     rm -f "$tmp"
 }
 
-changed=$(run_case "$(printf 'A\tpackages/foo.sh\nM\tpackages/bar.sh\nD\tpackages/baz.sh\nR100\tpackages/old.sh\tpackages/new.sh\nM\tpackages/template.sh\n')")
+assert_fails() {
+    text=$1
+    tmp=$(mktemp)
+    printf '%s' "$text" >"$tmp"
+    if sh "$SCRIPT" "$tmp" >/dev/null 2>&1; then
+        printf 'expected command to fail\n' >&2
+        rm -f "$tmp"
+        exit 1
+    fi
+    rm -f "$tmp"
+}
+
+changed=$(run_case "$(printf 'A\tpackages/foo.sh\nM\tpackages/bar.sh\nD\tpackages/baz.sh\nR100\tpackages/old.sh\tpackages/new.sh\n')")
 assert_contains_line "$changed" 'build_matrix={"include":[{"package":"foo"},{"package":"bar"},{"package":"new"}]}'
 assert_contains_line "$changed" 'remove_matrix={"include":[{"package":"baz"},{"package":"old"}]}'
 assert_contains_line "$changed" 'has_builds=true'
 assert_contains_line "$changed" 'has_removals=true'
+
+assert_fails "$(printf 'A\tpackages/BadName.sh\n')"
 
 empty=$(run_case '')
 assert_contains_line "$empty" 'build_matrix={"include":[]}'

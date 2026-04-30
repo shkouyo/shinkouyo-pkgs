@@ -2,7 +2,10 @@
 
 set -eu
 
-. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/common.sh"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+. "$SCRIPT_DIR/lib/common.sh"
 
 state_relpath() {
     printf '%s/%s.env' "$STATE_PREFIX" "$1"
@@ -49,6 +52,7 @@ state_load() {
             ;;
     esac
     [ -n "${NAME-}" ] || die "missing NAME in $state_file"
+    require_package_name "$NAME"
     [ -n "${SOURCE_GIT-}" ] || die "missing SOURCE_GIT in $state_file"
     [ -n "${SOURCE_REF-}" ] || die "missing SOURCE_REF in $state_file"
     [ -n "${LAST_SOURCE_COMMIT-}" ] || die "missing LAST_SOURCE_COMMIT in $state_file"
@@ -77,16 +81,19 @@ state_emit_prefixed() {
 state_download() {
     name=$1
     dest=$2
+    require_package_name "$name"
     aws_s3_cp "$(state_s3_uri "$name.env")" "$dest"
 }
 
 state_upload() {
     name=$1
     src=$2
+    require_package_name "$name"
     aws_s3_cp "$src" "$(state_s3_uri "$name.env")"
 }
 
 state_delete_remote() {
     name=$1
+    require_package_name "$name"
     aws_s3_rm "$(state_s3_uri "$name.env")"
 }

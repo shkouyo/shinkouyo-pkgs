@@ -21,6 +21,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -46,6 +47,8 @@ jobs:
           set -eu
           sh scripts/test-state-compat.sh
           sh scripts/test-package-diff-plan.sh
+          sh scripts/test-ci-plan-failures.sh
+          sh scripts/test-check-updates.sh
 
       - name: Workflow YAML parse
         run: |

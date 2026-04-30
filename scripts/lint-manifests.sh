@@ -2,7 +2,10 @@
 
 set -eu
 
-. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/common.sh"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+. "$SCRIPT_DIR/lib/common.sh"
 . "$SCRIPT_DIR/manifest.sh"
 
 usage() {
@@ -16,6 +19,5 @@ fi
 
 for manifest in "$@"; do
     [ -f "$manifest" ] || usage
-    is_template_manifest "$manifest" && continue
     manifest_load "$manifest"
 done

@@ -2,7 +2,10 @@
 
 set -eu
 
-. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/common.sh"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+. "$SCRIPT_DIR/lib/common.sh"
 . "$SCRIPT_DIR/state.sh"
 
 tmp_dir=$(mktemp -d)
@@ -34,6 +37,18 @@ VCS_FINGERPRINT=''
 BUILT_AT='2026-01-02T00:00:00Z'
 EOF
 
+cat >"$tmp_dir/bad-name.env" <<'EOF'
+STATE_VERSION=2
+NAME='../bad'
+SOURCE_GIT='https://example.invalid/demo.git'
+SOURCE_REF='main'
+LAST_SOURCE_COMMIT='def456'
+PKGNAMES='demo'
+PKGFILES='demo-2-1-any.pkg.tar.zst'
+VCS_FINGERPRINT=''
+BUILT_AT='2026-01-02T00:00:00Z'
+EOF
+
 state_load "$tmp_dir/v1.env"
 [ "$NAME" = 'demo' ]
 [ "$VCS_FINGERPRINT" = '' ]
@@ -42,5 +57,9 @@ eval "$(state_emit_prefixed OLD "$tmp_dir/v2.env")"
 [ "$OLD_NAME" = 'demo' ]
 [ "$OLD_LAST_SOURCE_COMMIT" = 'def456' ]
 [ "$OLD_PKGFILES" = 'demo-2-1-any.pkg.tar.zst' ]
+
+if ( state_load "$tmp_dir/bad-name.env" ) >/dev/null 2>&1; then
+    die 'state_load accepted an invalid package name'
+fi
 
 printf '%s\n' 'state compatibility checks passed'

@@ -2,7 +2,10 @@
 
 set -eu
 
-. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/common.sh"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+. "$SCRIPT_DIR/lib/common.sh"
 . "$SCRIPT_DIR/manifest.sh"
 . "$SCRIPT_DIR/state.sh"
 
@@ -17,7 +20,7 @@ EOF
 }
 
 PROBE_LOG_TAIL_LINES=50
-PROBE_VERSION='vcs-probe-v3'
+PROBE_VERSION='vcs-probe-v4'
 
 print_log_tail() {
     label=$1
@@ -40,7 +43,6 @@ prepare_context() {
     context_dir=$(CDPATH= cd -- "$context_dir" && pwd)
 
     manifest_load "$manifest_path"
-    is_template_manifest "$manifest_path" && die "template manifest is not buildable"
 
     source_dir="$context_dir/source"
     pkgdest_dir="$context_dir/pkgdest"
@@ -95,13 +97,13 @@ prepare() {
 run_probe_nobuild() {
     build_env
     export PKGDEST PACKAGER
-    makepkg --nobuild --nodeps --skipinteg -p "$BUILD_PKGBUILD" >/dev/null
+    makepkg --nobuild --nodeps --skipinteg --nosign -p "$BUILD_PKGBUILD" >/dev/null
 }
 
 run_probe_packagelist() {
     build_env
     export PKGDEST PACKAGER
-    makepkg --packagelist --nodeps --skipinteg --holdver -p "$BUILD_PKGBUILD"
+    makepkg --packagelist --nodeps --skipinteg --holdver --nosign -p "$BUILD_PKGBUILD"
 }
 
 probe_extract_pkgfiles() {
@@ -124,9 +126,6 @@ run_probe_attempt_makepkg() {
     (
         cd "$BUILD_DIR"
         case $strategy in
-            packagelist)
-                run_probe_packagelist
-                ;;
             nobuild-packagelist)
                 run_probe_nobuild
                 run_probe_packagelist
@@ -171,31 +170,16 @@ probe_vcs() {
     probe_stdout_file="$context_dir/predicted_pkgfiles.stdout"
     probe_stderr_file="$context_dir/predicted_pkgfiles.stderr"
     raw_pkglist_file="$context_dir/predicted_pkgfiles.raw"
-    if ! run_probe_attempt packagelist; then
-        print_log_tail "probe[$PROBE_VERSION]: packagelist stdout for $NAME" "$probe_stdout_file"
-        print_log_tail "probe[$PROBE_VERSION]: packagelist stderr for $NAME" "$probe_stderr_file"
-        log "probe[$PROBE_VERSION]: primary strategy failed for $NAME, retrying with nobuild-packagelist"
-    else
-        current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
-        if [ -n "$current_predicted_pkgfiles" ]; then
-            return 0
-        fi
-
-        print_log_tail "probe[$PROBE_VERSION]: packagelist stdout for $NAME" "$probe_stdout_file"
-        print_log_tail "probe[$PROBE_VERSION]: packagelist stderr for $NAME" "$probe_stderr_file"
-        log "probe[$PROBE_VERSION]: primary strategy produced no package files for $NAME, retrying with nobuild-packagelist"
-    fi
-
     if ! run_probe_attempt nobuild-packagelist; then
-        print_log_tail "probe[$PROBE_VERSION]: fallback stdout for $NAME" "$probe_stdout_file"
-        print_log_tail "probe[$PROBE_VERSION]: fallback stderr for $NAME" "$probe_stderr_file"
+        print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stdout for $NAME" "$probe_stdout_file"
+        print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stderr for $NAME" "$probe_stderr_file"
         die "probe did not predict any package files for $NAME"
     fi
 
     current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
     if [ -z "$current_predicted_pkgfiles" ]; then
-        print_log_tail "probe[$PROBE_VERSION]: fallback stdout for $NAME" "$probe_stdout_file"
-        print_log_tail "probe[$PROBE_VERSION]: fallback stderr for $NAME" "$probe_stderr_file"
+        print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stdout for $NAME" "$probe_stdout_file"
+        print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stderr for $NAME" "$probe_stderr_file"
         die "probe did not predict any package files for $NAME"
     fi
 }

@@ -14,7 +14,12 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: ${{ vars.REPO_NAME }}-x86_64-r2-write
+      cancel-in-progress: false
     env:
+      PACKAGE: ${{ inputs.package }}
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
       PACKAGER: ${{ vars.PACKAGER }}
@@ -33,9 +38,9 @@ jobs:
       - name: Validate manifest
         run: |
           set -eu
-          test -n "${{ inputs.package }}"
-          test "${{ inputs.package }}" != "template"
-          manifest="packages/${{ inputs.package }}.sh"
+          . scripts/lib/common.sh
+          require_package_name "$PACKAGE"
+          manifest="packages/$PACKAGE.sh"
           test -f "$manifest"
           sh scripts/lint-manifests.sh "$manifest"
 
@@ -43,7 +48,7 @@ jobs:
         id: prepare
         run: |
           set -eu
-          sh scripts/ci/prepare-build-context.sh "packages/${{ inputs.package }}.sh" "$GITHUB_WORKSPACE/.ci-tmp/build-${{ inputs.package }}"
+          sh scripts/ci/prepare-build-context.sh "packages/$PACKAGE.sh" "$GITHUB_WORKSPACE/.ci-tmp/build-$PACKAGE"
 
       - name: Build package
         uses: heyhusen/archlinux-package-action@d2f80c53bfd34d9a6ed71dd97d5cae35d9645670 # v3.0.0

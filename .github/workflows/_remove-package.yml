@@ -14,7 +14,12 @@ permissions:
 jobs:
   remove:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: ${{ vars.REPO_NAME }}-x86_64-r2-write
+      cancel-in-progress: false
     env:
+      PACKAGE: ${{ inputs.package }}
       REPO_NAME: ${{ vars.REPO_NAME }}
       S3_BUCKET: ${{ vars.S3_BUCKET }}
       S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
@@ -30,10 +35,10 @@ jobs:
       - name: Validate input
         run: |
           set -eu
-          test -n "${{ inputs.package }}"
-          test "${{ inputs.package }}" != "template"
+          . scripts/lib/common.sh
+          require_package_name "$PACKAGE"
 
       - name: Remove package from repo
         run: |
           set -eu
-          sh scripts/remove.sh "${{ inputs.package }}"
+          sh scripts/remove.sh "$PACKAGE"

@@ -2,7 +2,10 @@
 
 set -eu
 
-. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/common.sh"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+. "$SCRIPT_DIR/lib/common.sh"
 . "$SCRIPT_DIR/manifest.sh"
 . "$SCRIPT_DIR/state.sh"
 
@@ -21,7 +24,7 @@ require_update_env
 require_cmd git
 require_cmd aws
 
-packages_dir="$ROOT_DIR/packages"
+packages_dir=${PACKAGES_DIR:-"$ROOT_DIR/packages"}
 [ -d "$packages_dir" ] || exit 0
 
 queue_package() {
@@ -117,7 +120,6 @@ check_vcs_package() {
 
 for manifest in "$packages_dir"/*.sh; do
     [ -e "$manifest" ] || continue
-    is_template_manifest "$manifest" && continue
 
     manifest_load "$manifest"
     [ "$UPDATE_ENABLED" = "1" ] || continue

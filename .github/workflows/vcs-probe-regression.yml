@@ -30,6 +30,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     container:
       image: archlinux:multilib-devel
     steps:

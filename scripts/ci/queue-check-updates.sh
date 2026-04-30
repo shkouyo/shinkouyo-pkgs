@@ -18,13 +18,21 @@ case $mode in
     *) die "unsupported mode: $mode" ;;
 esac
 
-packages_txt=${RUNNER_TEMP:-/tmp}/packages.txt
+tmp_dir=$(mktemp -d)
+cleanup() {
+    rm -rf "$tmp_dir"
+}
+trap cleanup EXIT HUP INT TERM
+
+raw_packages="$tmp_dir/packages.raw"
+packages_txt="$tmp_dir/packages.txt"
 
 if [ "$mode" = "vcs" ]; then
-    sh "$ROOT_DIR/scripts/ci/run-probe-user.sh" sh "$ROOT_DIR/scripts/check-updates.sh" vcs \
-        | LC_ALL=C sort -u >"$packages_txt"
+    sh "$ROOT_DIR/scripts/ci/run-probe-user.sh" sh "$ROOT_DIR/scripts/check-updates.sh" vcs >"$raw_packages"
 else
-    sh "$ROOT_DIR/scripts/check-updates.sh" regular | LC_ALL=C sort -u >"$packages_txt"
+    sh "$ROOT_DIR/scripts/check-updates.sh" regular >"$raw_packages"
 fi
+
+LC_ALL=C sort -u "$raw_packages" >"$packages_txt"
 
 printf 'packages=%s\n' "$(sh "$ROOT_DIR/scripts/ci/json-array.sh" "$packages_txt")" >>"$GITHUB_OUTPUT"

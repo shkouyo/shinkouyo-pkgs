@@ -1,4 +1,4 @@
-# shellcheck disable=all
+# shellcheck shell=sh
 
 SCHEMA_VERSION=1
 NAME='noctalia-shell'

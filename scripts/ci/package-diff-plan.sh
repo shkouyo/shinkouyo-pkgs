@@ -2,6 +2,11 @@
 
 set -eu
 
+CI_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT_DIR=$(CDPATH= cd -- "$CI_DIR/../.." && pwd)
+
+. "$ROOT_DIR/scripts/lib/common.sh"
+
 [ "$#" -eq 1 ] || {
     printf 'usage: package-diff-plan.sh <git-diff-name-status-file>\n' >&2
     exit 1
@@ -16,6 +21,9 @@ remove_count=0
 append_json_item() {
     existing=$1
     package=$2
+
+    require_package_name "$package"
+
     escaped=$(printf '%s' "$package" | sed 's/\\/\\\\/g; s/"/\\"/g')
     item=$(printf '{"package":"%s"}' "$escaped")
     if [ -z "$existing" ]; then
@@ -36,19 +44,14 @@ while IFS= read -r raw || [ -n "$raw" ]; do
             new_path=$(printf '%s' "$raw" | cut -f3)
             old_name=$(basename "$old_path" .sh)
             new_name=$(basename "$new_path" .sh)
-            if [ "$old_name" != "template" ]; then
-                removals_json=$(append_json_item "$removals_json" "$old_name")
-                remove_count=$((remove_count + 1))
-            fi
-            if [ "$new_name" != "template" ]; then
-                builds_json=$(append_json_item "$builds_json" "$new_name")
-                build_count=$((build_count + 1))
-            fi
+            removals_json=$(append_json_item "$removals_json" "$old_name")
+            remove_count=$((remove_count + 1))
+            builds_json=$(append_json_item "$builds_json" "$new_name")
+            build_count=$((build_count + 1))
             ;;
         *)
             path=$(printf '%s' "$raw" | cut -f2)
             name=$(basename "$path" .sh)
-            [ "$name" = "template" ] && continue
             if [ "$status" = "D" ]; then
                 removals_json=$(append_json_item "$removals_json" "$name")
                 remove_count=$((remove_count + 1))

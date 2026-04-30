@@ -198,8 +198,16 @@ trim_package_basename() {
     basename "$1" .sh
 }
 
-is_template_manifest() {
-    [ "$(basename "$1")" = "template.sh" ]
+is_valid_package_name() {
+    case ${1-} in
+        ''|-*|*[!abcdefghijklmnopqrstuvwxyz0123456789@._+-]*)
+            return 1
+            ;;
+    esac
+}
+
+require_package_name() {
+    is_valid_package_name "${1-}" || die "invalid package name: ${1-}"
 }
 
 manifest_abs_path() {

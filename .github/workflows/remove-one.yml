@@ -12,22 +12,25 @@ on:
         required: true
         type: string
 
-concurrency:
-  group: ${{ vars.REPO_NAME }}-x86_64
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PACKAGE: ${{ github.event.inputs.package }}
+      CONFIRM: ${{ github.event.inputs.confirm }}
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
       - name: Validate input
         run: |
           set -eu
-          test "${{ github.event.inputs.confirm }}" = "DELETE"
-          test "${{ github.event.inputs.package }}" != "template"
+          test "$CONFIRM" = "DELETE"
+          . scripts/lib/common.sh
+          require_package_name "$PACKAGE"
 
   remove:
     needs: validate

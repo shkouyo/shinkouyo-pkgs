@@ -8,16 +8,13 @@ on:
         required: true
         type: string
 
-concurrency:
-  group: ${{ vars.REPO_NAME }}-x86_64
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
   validate-mode:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       mode: ${{ steps.mode.outputs.mode }}
     steps:
@@ -25,22 +22,28 @@ jobs:
         run: |
           set -eu
           printf 'workflow_sha=%s\n' "$GITHUB_SHA"
-          printf 'probe_version=%s\n' 'vcs-probe-v3'
+          printf 'probe_version=%s\n' 'vcs-probe-v4'
 
       - name: Validate mode
         id: mode
+        env:
+          MODE: ${{ inputs.mode }}
         run: |
           set -eu
-          case "${{ inputs.mode }}" in
+          case "$MODE" in
             all|regular|vcs) ;;
             *) exit 1 ;;
           esac
-          printf 'mode=%s\n' "${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+          printf 'mode=%s\n' "$MODE" >> "$GITHUB_OUTPUT"
 
   plan-regular:
     needs: validate-mode
     if: needs.validate-mode.outputs.mode == 'all' || needs.validate-mode.outputs.mode == 'regular'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: ${{ vars.REPO_NAME }}-x86_64-update-plan-regular
+      cancel-in-progress: true
     env:
       REPO_NAME: ${{ vars.REPO_NAME }}
       S3_BUCKET: ${{ vars.S3_BUCKET }}
@@ -66,6 +69,10 @@ jobs:
     needs: validate-mode
     if: needs.validate-mode.outputs.mode == 'all' || needs.validate-mode.outputs.mode == 'vcs'
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: ${{ vars.REPO_NAME }}-x86_64-update-plan-vcs
+      cancel-in-progress: true
     container:
       image: archlinux:multilib-devel
     env:
@@ -102,6 +109,7 @@ jobs:
       - plan-vcs
     if: ${{ always() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.merge.outputs.matrix }}
       has_items: ${{ steps.merge.outputs.has_items }}

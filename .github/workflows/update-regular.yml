@@ -2,7 +2,7 @@ name: update-regular
 
 on:
   schedule:
-    - cron: '7,37 * * * *'
+    - cron: '7 */6 * * *'
   workflow_dispatch:
 
 jobs:

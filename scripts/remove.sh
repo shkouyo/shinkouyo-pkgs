@@ -2,7 +2,10 @@
 
 set -eu
 
-. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/common.sh"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+. "$SCRIPT_DIR/lib/common.sh"
 . "$SCRIPT_DIR/state.sh"
 
 [ "$#" -eq 1 ] || {
@@ -14,7 +17,7 @@ require_update_env
 require_cmd aws
 
 name=$1
-[ "$name" != "template" ] || die "template manifest is not removable"
+require_package_name "$name"
 
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM

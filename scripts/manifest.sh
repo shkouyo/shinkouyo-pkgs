@@ -2,7 +2,10 @@
 
 set -eu
 
-. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/common.sh"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+. "$SCRIPT_DIR/lib/common.sh"
 
 manifest_reset() {
     unset SCHEMA_VERSION NAME SOURCE_GIT SOURCE_REF BUILD_WORKDIR BUILD_PKGBUILD UPDATE_ENABLED UPDATE_VCS 2>/dev/null || :
@@ -35,6 +38,7 @@ manifest_load() {
     esac
 
     expected_name=$(trim_package_basename "$manifest_path")
+    require_package_name "$NAME"
     [ "$NAME" = "$expected_name" ] || die "manifest NAME does not match filename: $manifest_path"
     command -v build_env >/dev/null 2>&1 || die "build_env() missing in $manifest_path"
 }
