@@ -127,7 +127,7 @@ jobs:
 
   build:
     needs: merge-plan
-    if: needs.merge-plan.outputs.has_items == 'true'
+    if: ${{ !cancelled() && needs.merge-plan.result == 'success' && needs.merge-plan.outputs.has_items == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 1

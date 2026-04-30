@@ -42,8 +42,29 @@ VCS_PACKAGES='["foo","baz"]' \
 grep -F -x 'matrix={"include":[{"package":"bar"},{"package":"baz"},{"package":"foo"}]}' "$tmp_dir/merge.out" >/dev/null
 grep -F -x 'has_items=true' "$tmp_dir/merge.out" >/dev/null
 
+REGULAR_RESULT=success \
+REGULAR_PACKAGES='["linuxqq","ventoy-bin"]' \
+VCS_RESULT=skipped \
+    sh "$ROOT_DIR/scripts/ci/merge-package-plans.sh" >"$tmp_dir/regular-only.out"
+
+grep -F -x 'matrix={"include":[{"package":"linuxqq"},{"package":"ventoy-bin"}]}' "$tmp_dir/regular-only.out" >/dev/null
+grep -F -x 'has_items=true' "$tmp_dir/regular-only.out" >/dev/null
+
+REGULAR_RESULT=skipped \
+VCS_RESULT=success \
+VCS_PACKAGES='["niri-git"]' \
+    sh "$ROOT_DIR/scripts/ci/merge-package-plans.sh" >"$tmp_dir/vcs-only.out"
+
+grep -F -x 'matrix={"include":[{"package":"niri-git"}]}' "$tmp_dir/vcs-only.out" >/dev/null
+grep -F -x 'has_items=true' "$tmp_dir/vcs-only.out" >/dev/null
+
 if grep -F 'x86_64-update-plan' "$ROOT_DIR/.github/workflows/_check-updates.yml" >/dev/null; then
     printf 'update planning jobs must not use cancelable update-plan concurrency\n' >&2
+    exit 1
+fi
+
+if ! grep -F "if: \${{ !cancelled() && needs.merge-plan.result == 'success' && needs.merge-plan.outputs.has_items == 'true' }}" "$ROOT_DIR/.github/workflows/_check-updates.yml" >/dev/null; then
+    printf 'update build job must use an explicit status function in its if condition\n' >&2
     exit 1
 fi
 
