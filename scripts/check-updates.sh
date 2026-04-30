@@ -25,10 +25,25 @@ require_cmd git
 require_cmd aws
 
 packages_dir=${PACKAGES_DIR:-"$ROOT_DIR/packages"}
-[ -d "$packages_dir" ] || exit 0
+if [ ! -d "$packages_dir" ]; then
+    log "check-updates[$mode]: packages directory not found: $packages_dir"
+    exit 0
+fi
+
+checked_count=0
+queued_count=0
+skipped_count=0
 
 queue_package() {
-    printf '%s\n' "$1"
+    package=$1
+
+    require_package_name "$package"
+    queued_count=$((queued_count + 1))
+    printf '%s\n' "$package"
+}
+
+skip_package() {
+    skipped_count=$((skipped_count + 1))
 }
 
 log_file_tail() {
@@ -63,7 +78,8 @@ check_regular_package() {
         return 0
     fi
 
-    log "$NAME: unchanged, skipped"
+    log "$NAME: source commit unchanged, skipped"
+    skip_package
 }
 
 check_vcs_package() {
@@ -87,6 +103,7 @@ check_vcs_package() {
         return 0
     fi
 
+    log "$NAME: probing VCS package metadata"
     probe_dir="$tmp_dir/probe"
     mkdir -p "$probe_dir"
     probe_stdout="$tmp_dir/probe.stdout"
@@ -111,6 +128,12 @@ check_vcs_package() {
     [ -f "$vcs_fingerprint_file" ] || die "probe did not produce vcs_fingerprint.txt for $NAME"
 
     current_vcs_fingerprint=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
+    if [ -z "$current_vcs_fingerprint" ]; then
+        log "$NAME: empty VCS fingerprint, queued"
+        queue_package "$NAME"
+        return 0
+    fi
+
     if [ "$current_vcs_fingerprint" != "$OLD_VCS_FINGERPRINT" ]; then
         log "$NAME: VCS fingerprint changed, queued"
         queue_package "$NAME"
@@ -125,7 +148,10 @@ check_vcs_package() {
     fi
 
     log "$NAME: unchanged, skipped"
+    skip_package
 }
+
+log "check-updates[$mode]: scanning $packages_dir"
 
 for manifest in "$packages_dir"/*.sh; do
     [ -e "$manifest" ] || continue
@@ -142,6 +168,9 @@ for manifest in "$packages_dir"/*.sh; do
             ;;
     esac
 
+    checked_count=$((checked_count + 1))
+    log "$NAME: checking $(basename "$manifest")"
+
     tmp_dir=$(mktemp -d)
     if [ "$UPDATE_VCS" = "1" ]; then
         check_vcs_package "$manifest" "$tmp_dir"
@@ -152,3 +181,5 @@ for manifest in "$packages_dir"/*.sh; do
     check_regular_package "$tmp_dir"
     rm -rf "$tmp_dir"
 done
+
+log "check-updates[$mode]: checked=$checked_count queued=$queued_count skipped=$skipped_count"

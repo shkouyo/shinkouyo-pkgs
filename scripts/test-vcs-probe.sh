@@ -244,4 +244,81 @@ unchanged=$(
 )
 [ -z "$unchanged" ] || die "VCS package was queued without source, fingerprint, or pkgfile changes: $unchanged"
 
+plain_pkgbuild_repo="$tmp_dir/plain-pkgbuild-repo"
+mkdir -p "$plain_pkgbuild_repo"
+cat >"$plain_pkgbuild_repo/PKGBUILD" <<'EOF'
+pkgname=plain-vcs-git
+pkgver=1
+pkgrel=1
+pkgdesc='plain VCS probe fixture without VCS sources'
+arch=('any')
+license=('MIT')
+
+package() {
+    mkdir -p "$pkgdir/usr/share/plain-vcs-git"
+    printf '%s\n' fixture > "$pkgdir/usr/share/plain-vcs-git/source.txt"
+}
+EOF
+
+(
+    cd "$plain_pkgbuild_repo"
+    git init -q
+    git config user.email test@example.invalid
+    git config user.name test
+    git config commit.gpgsign false
+)
+git_commit "$plain_pkgbuild_repo" plain
+plain_ref=$(cd "$plain_pkgbuild_repo" && git rev-parse --abbrev-ref HEAD)
+plain_commit=$(cd "$plain_pkgbuild_repo" && git rev-parse HEAD)
+
+cat >"$packages_dir/plain-vcs-git.sh" <<EOF
+# shellcheck shell=sh
+
+SCHEMA_VERSION=1
+NAME='plain-vcs-git'
+
+SOURCE_GIT='$plain_pkgbuild_repo'
+SOURCE_REF='$plain_ref'
+
+BUILD_WORKDIR='.'
+BUILD_PKGBUILD='./PKGBUILD'
+
+UPDATE_ENABLED=1
+UPDATE_VCS=1
+
+build_env() {
+    :
+}
+EOF
+
+plain_probe_dir="$tmp_dir/plain-probe"
+"$SCRIPT_DIR/build.sh" probe-vcs "$packages_dir/plain-vcs-git.sh" "$plain_probe_dir"
+plain_pkgfiles=$(cat "$plain_probe_dir/predicted_pkgfiles.txt")
+plain_fingerprint=$(cat "$plain_probe_dir/vcs_fingerprint.txt")
+case " $plain_pkgfiles " in
+    *" plain-vcs-git-1-1-any.pkg.tar.zst "*) ;;
+    *) die "plain VCS probe predicted unexpected pkgfiles: $plain_pkgfiles" ;;
+esac
+[ -z "$plain_fingerprint" ] || die "plain VCS probe unexpectedly produced fingerprint: $plain_fingerprint"
+
+cat >"$state_dir/plain-vcs-git.env" <<EOF
+STATE_VERSION=2
+NAME='plain-vcs-git'
+SOURCE_GIT='$plain_pkgbuild_repo'
+SOURCE_REF='$plain_ref'
+LAST_SOURCE_COMMIT='$plain_commit'
+PKGNAMES='plain-vcs-git'
+PKGFILES='$plain_pkgfiles'
+VCS_FINGERPRINT=''
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+queued=$(
+    TEST_STATE_DIR=$state_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs
+)
+[ "$queued" = 'plain-vcs-git' ] || die "VCS package with empty fingerprint was not queued: $queued"
+
 printf '%s\n' 'vcs probe regression checks passed'

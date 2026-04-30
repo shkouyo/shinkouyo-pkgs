@@ -27,6 +27,8 @@ trap cleanup EXIT HUP INT TERM
 raw_packages="$tmp_dir/packages.raw"
 packages_txt="$tmp_dir/packages.txt"
 
+log "queue-check-updates[$mode]: building package queue"
+
 if [ "$mode" = "vcs" ]; then
     sh "$ROOT_DIR/scripts/ci/run-probe-user.sh" sh "$ROOT_DIR/scripts/check-updates.sh" vcs >"$raw_packages"
 else
@@ -34,5 +36,16 @@ else
 fi
 
 LC_ALL=C sort -u "$raw_packages" >"$packages_txt"
+
+while IFS= read -r package; do
+    [ -n "$package" ] || continue
+    require_package_name "$package"
+done <"$packages_txt"
+
+queued_count=$(awk 'NF { count++ } END { print count + 0 }' "$packages_txt")
+log "queue-check-updates[$mode]: queued=$queued_count"
+if [ "$queued_count" -gt 0 ]; then
+    sed 's/^/queue-check-updates['"$mode"']: queued package: /' "$packages_txt" >&2
+fi
 
 printf 'packages=%s\n' "$(sh "$ROOT_DIR/scripts/ci/json-array.sh" "$packages_txt")" >>"$GITHUB_OUTPUT"

@@ -20,7 +20,7 @@ EOF
 }
 
 PROBE_LOG_TAIL_LINES=50
-PROBE_VERSION='vcs-probe-v5'
+PROBE_VERSION='vcs-probe-v6'
 
 print_log_tail() {
     label=$1
@@ -46,8 +46,9 @@ prepare_context() {
 
     source_dir="$context_dir/source"
     pkgdest_dir="$context_dir/pkgdest"
+    srcdest_dir="$context_dir/srcdest"
     rm -rf "$source_dir"
-    mkdir -p "$pkgdest_dir"
+    mkdir -p "$pkgdest_dir" "$srcdest_dir"
     git clone --filter=blob:none "$SOURCE_GIT" "$source_dir"
     (
         cd "$source_dir"
@@ -71,9 +72,11 @@ prepare_context() {
     # runner temp mount, so the prepared tree must be writable by that user.
     chmod -R a+rwX "$source_dir"
     chmod -R a+rwX "$pkgdest_dir"
+    chmod -R a+rwX "$srcdest_dir"
 
     manifest_write_github_env "$context_dir/github.env"
     printf 'PKGDEST=%s\n' "$pkgdest_dir" >>"$context_dir/github.env"
+    printf 'SRCDEST=%s\n' "$srcdest_dir" >>"$context_dir/github.env"
     printf 'PACKAGER=%s\n' "$PACKAGER" >>"$context_dir/github.env"
 
     {
@@ -84,6 +87,7 @@ prepare_context() {
         printf 'SOURCE_DIR=%s\n' "$(shell_quote "$source_dir")"
         printf 'BUILD_DIR=%s\n' "$(shell_quote "$build_dir")"
         printf 'PKGDEST=%s\n' "$(shell_quote "$pkgdest_dir")"
+        printf 'SRCDEST=%s\n' "$(shell_quote "$srcdest_dir")"
         printf 'PACKAGER=%s\n' "$(shell_quote "$PACKAGER")"
         printf 'BUILD_PKGBUILD=%s\n' "$(shell_quote "$BUILD_PKGBUILD")"
         printf 'LAST_SOURCE_COMMIT=%s\n' "$(shell_quote "$(cat "$context_dir/last_source_commit.txt")")"
@@ -96,13 +100,13 @@ prepare() {
 
 run_probe_nobuild() {
     build_env
-    export PKGDEST PACKAGER
+    export PKGDEST SRCDEST PACKAGER
     makepkg --nobuild --nodeps --skipinteg --nosign -p "$BUILD_PKGBUILD" >/dev/null
 }
 
 run_probe_packagelist() {
     build_env
-    export PKGDEST PACKAGER
+    export PKGDEST SRCDEST PACKAGER
     makepkg --packagelist --nodeps --skipinteg --holdver --nosign -p "$BUILD_PKGBUILD"
 }
 
@@ -120,35 +124,74 @@ probe_extract_pkgfiles() {
     done <"$input_file" | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$output_file"
 }
 
+append_git_repo_fingerprint() {
+    fingerprint_scan_root=$1
+    fingerprint_repo_dir=$2
+    fingerprint_output_file=$3
+
+    case $fingerprint_repo_dir in
+        "$fingerprint_scan_root")
+            fingerprint_rel=.
+            ;;
+        "$fingerprint_scan_root"/*)
+            fingerprint_rel=${fingerprint_repo_dir#"$fingerprint_scan_root"/}
+            ;;
+        *)
+            fingerprint_rel=$fingerprint_repo_dir
+            ;;
+    esac
+
+    fingerprint_commit=$(git -C "$fingerprint_repo_dir" rev-parse --verify HEAD 2>/dev/null) || return 0
+    printf '%s HEAD %s\n' "$fingerprint_rel" "$fingerprint_commit" >>"$fingerprint_output_file"
+
+    git -C "$fingerprint_repo_dir" for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes refs/tags 2>/dev/null \
+        | while IFS= read -r fingerprint_ref_line; do
+            [ -n "$fingerprint_ref_line" ] || continue
+            printf '%s ref %s\n' "$fingerprint_rel" "$fingerprint_ref_line"
+        done >>"$fingerprint_output_file"
+}
+
+write_vcs_fingerprint_root() {
+    fingerprint_root=$1
+    fingerprint_root_output_file=$2
+
+    [ -d "$fingerprint_root" ] || return 0
+
+    fingerprint_root_tmp_file=$(mktemp)
+    : >"$fingerprint_root_tmp_file"
+
+    find "$fingerprint_root" -name .git -print -prune | while IFS= read -r fingerprint_git_meta; do
+        fingerprint_repo_dir=$(dirname "$fingerprint_git_meta")
+        append_git_repo_fingerprint "$fingerprint_root" "$fingerprint_repo_dir" "$fingerprint_root_tmp_file"
+    done
+
+    find "$fingerprint_root" -type d \( -name '*.git' -o -path '*/.git/modules/*' \) -print \
+        | while IFS= read -r fingerprint_bare_repo_dir; do
+            [ "$(git -C "$fingerprint_bare_repo_dir" rev-parse --is-bare-repository 2>/dev/null || :)" = 'true' ] || continue
+            append_git_repo_fingerprint "$fingerprint_root" "$fingerprint_bare_repo_dir" "$fingerprint_root_tmp_file"
+        done
+
+    find "$fingerprint_root" -type d -print | while IFS= read -r fingerprint_cache_repo_dir; do
+        [ -d "$fingerprint_cache_repo_dir/objects" ] || continue
+        [ -d "$fingerprint_cache_repo_dir/refs" ] || continue
+        [ -f "$fingerprint_cache_repo_dir/config" ] || continue
+        [ "$(git -C "$fingerprint_cache_repo_dir" rev-parse --is-bare-repository 2>/dev/null || :)" = 'true' ] || continue
+        append_git_repo_fingerprint "$fingerprint_root" "$fingerprint_cache_repo_dir" "$fingerprint_root_tmp_file"
+    done
+
+    LC_ALL=C sort -u "$fingerprint_root_tmp_file" >>"$fingerprint_root_output_file"
+    rm -f "$fingerprint_root_tmp_file"
+}
+
 write_vcs_fingerprint() {
-    src_root=$1
-    output_file=$2
+    fingerprint_output_file=$1
 
-    : >"$output_file"
-    [ -d "$src_root" ] || return 0
-
-    tmp_file=$(mktemp)
-
-    find "$src_root" -name .git -print -prune | while IFS= read -r git_meta; do
-        repo_dir=$(dirname "$git_meta")
-        case $repo_dir in
-            "$src_root")
-                rel=.
-                ;;
-            "$src_root"/*)
-                rel=${repo_dir#"$src_root"/}
-                ;;
-            *)
-                rel=$repo_dir
-                ;;
-        esac
-
-        commit=$(git -C "$repo_dir" rev-parse --verify HEAD 2>/dev/null) || continue
-        printf '%s %s\n' "$rel" "$commit"
-    done >"$tmp_file"
-
-    LC_ALL=C sort -u "$tmp_file" | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$output_file"
-    rm -f "$tmp_file"
+    fingerprint_tmp_file=$(mktemp)
+    : >"$fingerprint_tmp_file"
+    write_vcs_fingerprint_root "$BUILD_DIR/src" "$fingerprint_tmp_file"
+    write_vcs_fingerprint_root "$SRCDEST" "$fingerprint_tmp_file"
+    LC_ALL=C sort -u "$fingerprint_tmp_file" | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$fingerprint_output_file"
+    rm -f "$fingerprint_tmp_file"
 }
 
 run_probe_attempt_makepkg() {
@@ -187,7 +230,7 @@ run_probe_attempt() {
 
     cat "$probe_stdout_file" "$probe_stderr_file" >"$raw_pkglist_file"
     probe_extract_pkgfiles "$raw_pkglist_file" "$predicted_pkgfiles_file"
-    write_vcs_fingerprint "$BUILD_DIR/src" "$vcs_fingerprint_file"
+    write_vcs_fingerprint "$vcs_fingerprint_file"
 
     [ -n "$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")" ]
 }
@@ -263,7 +306,7 @@ collect() {
     PKGNAMES=$pkgnames
     PKGFILES=$pkgfiles
     fingerprint_file="$context_dir/vcs_fingerprint.txt"
-    write_vcs_fingerprint "$BUILD_DIR/src" "$fingerprint_file"
+    write_vcs_fingerprint "$fingerprint_file"
     VCS_FINGERPRINT=$(cat "$fingerprint_file")
     export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES VCS_FINGERPRINT BUILT_AT
     state_write_file "$context_dir/state.env"

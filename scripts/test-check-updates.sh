@@ -133,4 +133,11 @@ git_commit "$source_repo" two
 changed=$(common_env sh "$ROOT_DIR/scripts/check-updates.sh" regular)
 [ "$changed" = 'demo-regular' ] || die "regular package was not queued after source ref changed: $changed"
 
+github_output="$tmp_dir/github-output"
+queue_stderr="$tmp_dir/queue.stderr"
+common_env env GITHUB_OUTPUT="$github_output" sh "$ROOT_DIR/scripts/ci/queue-check-updates.sh" regular 2>"$queue_stderr"
+grep -F -x 'packages=["demo-regular"]' "$github_output" >/dev/null
+grep -F -x 'queue-check-updates[regular]: queued=1' "$queue_stderr" >/dev/null
+grep -F -x 'queue-check-updates[regular]: queued package: demo-regular' "$queue_stderr" >/dev/null
+
 printf '%s\n' 'check-updates checks passed'
