@@ -107,6 +107,15 @@ check_vcs_package() {
 
     predicted_pkgfiles_file="$probe_dir/predicted_pkgfiles.txt"
     [ -f "$predicted_pkgfiles_file" ] || die "probe did not produce predicted_pkgfiles.txt for $NAME"
+    vcs_fingerprint_file="$probe_dir/vcs_fingerprint.txt"
+    [ -f "$vcs_fingerprint_file" ] || die "probe did not produce vcs_fingerprint.txt for $NAME"
+
+    current_vcs_fingerprint=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
+    if [ "$current_vcs_fingerprint" != "$OLD_VCS_FINGERPRINT" ]; then
+        log "$NAME: VCS fingerprint changed, queued"
+        queue_package "$NAME"
+        return 0
+    fi
 
     current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
     if [ "$current_predicted_pkgfiles" != "$OLD_PKGFILES" ]; then

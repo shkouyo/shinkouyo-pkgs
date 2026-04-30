@@ -20,7 +20,7 @@ EOF
 }
 
 PROBE_LOG_TAIL_LINES=50
-PROBE_VERSION='vcs-probe-v4'
+PROBE_VERSION='vcs-probe-v5'
 
 print_log_tail() {
     label=$1
@@ -120,6 +120,37 @@ probe_extract_pkgfiles() {
     done <"$input_file" | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$output_file"
 }
 
+write_vcs_fingerprint() {
+    src_root=$1
+    output_file=$2
+
+    : >"$output_file"
+    [ -d "$src_root" ] || return 0
+
+    tmp_file=$(mktemp)
+
+    find "$src_root" -name .git -print -prune | while IFS= read -r git_meta; do
+        repo_dir=$(dirname "$git_meta")
+        case $repo_dir in
+            "$src_root")
+                rel=.
+                ;;
+            "$src_root"/*)
+                rel=${repo_dir#"$src_root"/}
+                ;;
+            *)
+                rel=$repo_dir
+                ;;
+        esac
+
+        commit=$(git -C "$repo_dir" rev-parse --verify HEAD 2>/dev/null) || continue
+        printf '%s %s\n' "$rel" "$commit"
+    done >"$tmp_file"
+
+    LC_ALL=C sort -u "$tmp_file" | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$output_file"
+    rm -f "$tmp_file"
+}
+
 run_probe_attempt_makepkg() {
     strategy=$1
 
@@ -144,8 +175,10 @@ run_probe_attempt() {
     : >"$probe_stderr_file"
     : >"$raw_pkglist_file"
     : >"$predicted_pkgfiles_file"
+    : >"$vcs_fingerprint_file"
 
     require_cmd makepkg
+    require_cmd git
 
     log "probe[$PROBE_VERSION]: backend=makepkg package=$NAME strategy=$strategy"
     if ! run_probe_attempt_makepkg "$strategy"; then
@@ -154,6 +187,7 @@ run_probe_attempt() {
 
     cat "$probe_stdout_file" "$probe_stderr_file" >"$raw_pkglist_file"
     probe_extract_pkgfiles "$raw_pkglist_file" "$predicted_pkgfiles_file"
+    write_vcs_fingerprint "$BUILD_DIR/src" "$vcs_fingerprint_file"
 
     [ -n "$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")" ]
 }
@@ -170,6 +204,7 @@ probe_vcs() {
     probe_stdout_file="$context_dir/predicted_pkgfiles.stdout"
     probe_stderr_file="$context_dir/predicted_pkgfiles.stderr"
     raw_pkglist_file="$context_dir/predicted_pkgfiles.raw"
+    vcs_fingerprint_file="$context_dir/vcs_fingerprint.txt"
     if ! run_probe_attempt nobuild-packagelist; then
         print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stdout for $NAME" "$probe_stdout_file"
         print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stderr for $NAME" "$probe_stderr_file"
@@ -188,6 +223,7 @@ collect() {
     context_dir=$1
     require_publish_env
     require_cmd gpg
+    require_cmd git
 
     # shellcheck disable=SC1090
     . "$context_dir/context.env"
@@ -226,7 +262,9 @@ collect() {
     BUILT_AT=$(date -u +%FT%TZ)
     PKGNAMES=$pkgnames
     PKGFILES=$pkgfiles
-    VCS_FINGERPRINT=''
+    fingerprint_file="$context_dir/vcs_fingerprint.txt"
+    write_vcs_fingerprint "$BUILD_DIR/src" "$fingerprint_file"
+    VCS_FINGERPRINT=$(cat "$fingerprint_file")
     export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES VCS_FINGERPRINT BUILT_AT
     state_write_file "$context_dir/state.env"
 }

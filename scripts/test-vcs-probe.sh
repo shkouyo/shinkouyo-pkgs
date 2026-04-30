@@ -165,7 +165,9 @@ EOF
 probe_dir="$tmp_dir/probe-old"
 "$SCRIPT_DIR/build.sh" probe-vcs "$packages_dir/local-vcs-git.sh" "$probe_dir"
 old_pkgfiles=$(cat "$probe_dir/predicted_pkgfiles.txt")
+old_fingerprint=$(cat "$probe_dir/vcs_fingerprint.txt")
 assert_contains_pkgfile "$old_pkgfiles" "$old_expected_pkgfile"
+[ -n "$old_fingerprint" ] || die "old VCS fingerprint was empty"
 
 printf '%s\n' two >>"$upstream_repo/source.txt"
 git_commit "$upstream_repo" two
@@ -174,8 +176,13 @@ new_expected_pkgfile=$(expected_pkgfile "$upstream_repo")
 probe_dir="$tmp_dir/probe-new"
 "$SCRIPT_DIR/build.sh" probe-vcs "$packages_dir/local-vcs-git.sh" "$probe_dir"
 new_pkgfiles=$(cat "$probe_dir/predicted_pkgfiles.txt")
+new_fingerprint=$(cat "$probe_dir/vcs_fingerprint.txt")
 assert_contains_pkgfile "$new_pkgfiles" "$new_expected_pkgfile"
 [ "$new_pkgfiles" != "$old_pkgfiles" ] || die "VCS probe did not change after upstream advanced"
+[ -n "$new_fingerprint" ] || die "new VCS fingerprint was empty"
+[ "$new_fingerprint" != "$old_fingerprint" ] || die "VCS fingerprint did not change after upstream advanced"
+
+write_fake_aws "$bin_dir"
 
 cat >"$state_dir/local-vcs-git.env" <<EOF
 STATE_VERSION=2
@@ -185,11 +192,9 @@ SOURCE_REF='$pkgbuild_ref'
 LAST_SOURCE_COMMIT='$pkgbuild_commit'
 PKGNAMES='local-vcs-git'
 PKGFILES='$old_pkgfiles'
-VCS_FINGERPRINT=''
+VCS_FINGERPRINT='$new_fingerprint'
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
-
-write_fake_aws "$bin_dir"
 
 queued=$(
     TEST_STATE_DIR=$state_dir \
@@ -198,5 +203,45 @@ queued=$(
     sh "$SCRIPT_DIR/check-updates.sh" vcs
 )
 [ "$queued" = 'local-vcs-git' ] || die "VCS package was not queued after upstream advanced: $queued"
+
+cat >"$state_dir/local-vcs-git.env" <<EOF
+STATE_VERSION=2
+NAME='local-vcs-git'
+SOURCE_GIT='$pkgbuild_repo'
+SOURCE_REF='$pkgbuild_ref'
+LAST_SOURCE_COMMIT='$pkgbuild_commit'
+PKGNAMES='local-vcs-git'
+PKGFILES='$new_pkgfiles'
+VCS_FINGERPRINT='$old_fingerprint'
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+queued=$(
+    TEST_STATE_DIR=$state_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs
+)
+[ "$queued" = 'local-vcs-git' ] || die "VCS package was not queued after fingerprint changed: $queued"
+
+cat >"$state_dir/local-vcs-git.env" <<EOF
+STATE_VERSION=2
+NAME='local-vcs-git'
+SOURCE_GIT='$pkgbuild_repo'
+SOURCE_REF='$pkgbuild_ref'
+LAST_SOURCE_COMMIT='$pkgbuild_commit'
+PKGNAMES='local-vcs-git'
+PKGFILES='$new_pkgfiles'
+VCS_FINGERPRINT='$new_fingerprint'
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+unchanged=$(
+    TEST_STATE_DIR=$state_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs
+)
+[ -z "$unchanged" ] || die "VCS package was queued without source, fingerprint, or pkgfile changes: $unchanged"
 
 printf '%s\n' 'vcs probe regression checks passed'

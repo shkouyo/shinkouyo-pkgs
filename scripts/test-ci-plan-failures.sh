@@ -42,4 +42,9 @@ VCS_PACKAGES='["foo","baz"]' \
 grep -F -x 'matrix={"include":[{"package":"bar"},{"package":"baz"},{"package":"foo"}]}' "$tmp_dir/merge.out" >/dev/null
 grep -F -x 'has_items=true' "$tmp_dir/merge.out" >/dev/null
 
+if grep -F 'x86_64-update-plan' "$ROOT_DIR/.github/workflows/_check-updates.yml" >/dev/null; then
+    printf 'update planning jobs must not use cancelable update-plan concurrency\n' >&2
+    exit 1
+fi
+
 printf '%s\n' 'ci plan failure checks passed'
