@@ -84,6 +84,12 @@ PATH=$bin_dir:$PATH \
 
 grep -F -x "VCS_FINGERPRINT=''" "$context_dir/state.env" >/dev/null ||
     die 'state.env did not preserve empty VCS_FINGERPRINT'
+grep -F -x 'STATE_VERSION=4' "$context_dir/state.env" >/dev/null ||
+    die 'state.env did not use state version 4'
+grep -F -x "PROBE_VERSION='vcs-probe-v8'" "$context_dir/state.env" >/dev/null ||
+    die 'state.env did not include probe version'
+grep -F -x "VCS_FINGERPRINT_KIND='git-heads-sha256-v1'" "$context_dir/state.env" >/dev/null ||
+    die 'state.env did not include VCS fingerprint kind'
 grep -F -x "PKGFILES='mpvpaper-rs-1-1-x86_64.pkg.tar.zst'" "$context_dir/state.env" >/dev/null ||
     die 'state.env did not include collected package file'
 

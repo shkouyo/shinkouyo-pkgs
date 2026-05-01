@@ -20,7 +20,7 @@ state_local_path() {
 state_write_file() {
     output_file=$1
     {
-        printf 'STATE_VERSION=3\n'
+        printf 'STATE_VERSION=4\n'
         printf 'NAME=%s\n' "$(shell_quote "$NAME")"
         printf 'SOURCE_GIT=%s\n' "$(shell_quote "$SOURCE_GIT")"
         printf 'SOURCE_REF=%s\n' "$(shell_quote "$SOURCE_REF")"
@@ -29,6 +29,9 @@ state_write_file() {
         printf 'PKGFILES=%s\n' "$(shell_quote "$PKGFILES")"
         printf 'RECIPE_FINGERPRINT=%s\n' "$(shell_quote "${RECIPE_FINGERPRINT-}")"
         printf 'VCS_FINGERPRINT=%s\n' "$(shell_quote "${VCS_FINGERPRINT-}")"
+        printf 'PROBE_VERSION=%s\n' "$(shell_quote "${PROBE_VERSION-}")"
+        printf 'RECIPE_FINGERPRINT_KIND=%s\n' "$(shell_quote "${RECIPE_FINGERPRINT_KIND-}")"
+        printf 'VCS_FINGERPRINT_KIND=%s\n' "$(shell_quote "${VCS_FINGERPRINT_KIND-}")"
         printf 'BUILT_AT=%s\n' "$(shell_quote "$BUILT_AT")"
     } >"$output_file"
 }
@@ -37,7 +40,7 @@ state_load() {
     state_file=$1
     [ -f "$state_file" ] || die "state not found: $state_file"
 
-    unset STATE_VERSION NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES RECIPE_FINGERPRINT VCS_FINGERPRINT BUILT_AT 2>/dev/null || :
+    unset STATE_VERSION NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES RECIPE_FINGERPRINT VCS_FINGERPRINT PROBE_VERSION RECIPE_FINGERPRINT_KIND VCS_FINGERPRINT_KIND BUILT_AT 2>/dev/null || :
     # shellcheck disable=SC1090
     . "$state_file"
 
@@ -54,10 +57,20 @@ state_load() {
             [ -n "${RECIPE_FINGERPRINT+x}" ] || die "missing RECIPE_FINGERPRINT in $state_file"
             [ -n "${VCS_FINGERPRINT+x}" ] || die "missing VCS_FINGERPRINT in $state_file"
             ;;
+        4)
+            [ -n "${RECIPE_FINGERPRINT+x}" ] || die "missing RECIPE_FINGERPRINT in $state_file"
+            [ -n "${VCS_FINGERPRINT+x}" ] || die "missing VCS_FINGERPRINT in $state_file"
+            [ -n "${PROBE_VERSION+x}" ] || die "missing PROBE_VERSION in $state_file"
+            [ -n "${RECIPE_FINGERPRINT_KIND+x}" ] || die "missing RECIPE_FINGERPRINT_KIND in $state_file"
+            [ -n "${VCS_FINGERPRINT_KIND+x}" ] || die "missing VCS_FINGERPRINT_KIND in $state_file"
+            ;;
         *)
             die "unsupported STATE_VERSION in $state_file"
             ;;
     esac
+    : "${PROBE_VERSION:=}"
+    : "${RECIPE_FINGERPRINT_KIND:=}"
+    : "${VCS_FINGERPRINT_KIND:=}"
     [ -n "${NAME-}" ] || die "missing NAME in $state_file"
     require_package_name "$NAME"
     [ -n "${SOURCE_GIT-}" ] || die "missing SOURCE_GIT in $state_file"
@@ -83,6 +96,9 @@ state_emit_prefixed() {
         printf '%s_PKGFILES=%s\n' "$prefix" "$(shell_quote "$PKGFILES")"
         printf '%s_RECIPE_FINGERPRINT=%s\n' "$prefix" "$(shell_quote "${RECIPE_FINGERPRINT-}")"
         printf '%s_VCS_FINGERPRINT=%s\n' "$prefix" "$(shell_quote "${VCS_FINGERPRINT-}")"
+        printf '%s_PROBE_VERSION=%s\n' "$prefix" "$(shell_quote "${PROBE_VERSION-}")"
+        printf '%s_RECIPE_FINGERPRINT_KIND=%s\n' "$prefix" "$(shell_quote "${RECIPE_FINGERPRINT_KIND-}")"
+        printf '%s_VCS_FINGERPRINT_KIND=%s\n' "$prefix" "$(shell_quote "${VCS_FINGERPRINT_KIND-}")"
         printf '%s_BUILT_AT=%s\n' "$prefix" "$(shell_quote "$BUILT_AT")"
     )
 }

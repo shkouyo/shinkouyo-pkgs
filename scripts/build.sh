@@ -20,7 +20,9 @@ EOF
 }
 
 PROBE_LOG_TAIL_LINES=50
-PROBE_VERSION='vcs-probe-v7'
+PROBE_VERSION='vcs-probe-v8'
+RECIPE_FINGERPRINT_KIND='recipe-files-sha256-v1'
+VCS_FINGERPRINT_KIND='git-heads-sha256-v1'
 
 print_log_tail() {
     label=$1
@@ -296,6 +298,7 @@ probe_vcs() {
     recipe_fingerprint_file="$context_dir/recipe_fingerprint.txt"
     vcs_fingerprint_file="$context_dir/vcs_fingerprint.txt"
     vcs_fingerprint_details_file="$context_dir/vcs_fingerprint.details"
+    probe_env_file="$context_dir/probe.env"
     if ! run_probe_attempt nobuild-packagelist; then
         print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stdout for $NAME" "$probe_stdout_file"
         print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stderr for $NAME" "$probe_stderr_file"
@@ -316,6 +319,15 @@ probe_vcs() {
     else
         : >"$vcs_fingerprint_file"
     fi
+
+    {
+        printf 'PROBE_VERSION=%s\n' "$(shell_quote "$PROBE_VERSION")"
+        printf 'PREDICTED_PKGFILES=%s\n' "$(shell_quote "$current_predicted_pkgfiles")"
+        printf 'RECIPE_FINGERPRINT=%s\n' "$(shell_quote "$(cat "$recipe_fingerprint_file")")"
+        printf 'RECIPE_FINGERPRINT_KIND=%s\n' "$(shell_quote "$RECIPE_FINGERPRINT_KIND")"
+        printf 'VCS_FINGERPRINT=%s\n' "$(shell_quote "$(cat "$vcs_fingerprint_file")")"
+        printf 'VCS_FINGERPRINT_KIND=%s\n' "$(shell_quote "$VCS_FINGERPRINT_KIND")"
+    } >"$probe_env_file"
 }
 
 collect() {
@@ -368,7 +380,7 @@ collect() {
     fingerprint_file="$context_dir/vcs_fingerprint.txt"
     write_vcs_fingerprint "$fingerprint_file"
     VCS_FINGERPRINT=$(cat "$fingerprint_file")
-    export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES RECIPE_FINGERPRINT VCS_FINGERPRINT BUILT_AT
+    export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES RECIPE_FINGERPRINT VCS_FINGERPRINT PROBE_VERSION RECIPE_FINGERPRINT_KIND VCS_FINGERPRINT_KIND BUILT_AT
     state_write_file "$context_dir/state.env"
 }
 
