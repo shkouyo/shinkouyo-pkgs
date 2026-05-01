@@ -74,4 +74,4 @@ jobs:
         if: ${{ always() }}
         run: |
           set -eu
-          rm -rf "${{ steps.prepare.outputs.context_dir }}"
+          sh scripts/ci/cleanup-build-context.sh "${{ steps.prepare.outputs.context_dir }}"

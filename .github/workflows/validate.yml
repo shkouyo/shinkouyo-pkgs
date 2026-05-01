@@ -48,6 +48,7 @@ jobs:
           sh scripts/test-state-compat.sh
           sh scripts/test-package-diff-plan.sh
           sh scripts/test-ci-plan-failures.sh
+          sh scripts/test-cleanup-build-context.sh
           sh scripts/test-run-probe-user.sh
           sh scripts/test-check-updates.sh
 
