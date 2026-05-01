@@ -137,7 +137,25 @@ github_output="$tmp_dir/github-output"
 queue_stderr="$tmp_dir/queue.stderr"
 common_env env GITHUB_OUTPUT="$github_output" sh "$ROOT_DIR/scripts/ci/queue-check-updates.sh" regular 2>"$queue_stderr"
 grep -F -x 'packages=["demo-regular"]' "$github_output" >/dev/null
+grep -F -x "check-updates[regular]: scanning $packages_dir" "$queue_stderr" >/dev/null
+grep -F -x 'demo-regular: checking demo-regular.sh' "$queue_stderr" >/dev/null
+grep -F -x 'check-updates[regular]: checked=1 queued=1 skipped=0' "$queue_stderr" >/dev/null
 grep -F -x 'queue-check-updates[regular]: queued=1' "$queue_stderr" >/dev/null
 grep -F -x 'queue-check-updates[regular]: queued package: demo-regular' "$queue_stderr" >/dev/null
+
+missing_output="$tmp_dir/missing-output"
+missing_stderr="$tmp_dir/missing.stderr"
+if common_env env GITHUB_OUTPUT="$missing_output" PACKAGES_DIR="$tmp_dir/missing" sh "$ROOT_DIR/scripts/ci/queue-check-updates.sh" regular >/dev/null 2>"$missing_stderr"; then
+    die "queue-check-updates.sh succeeded without a check summary"
+fi
+grep -F -x 'error: check-updates[regular] did not print a summary' "$missing_stderr" >/dev/null
+
+vcs_empty_output="$tmp_dir/vcs-empty-output"
+vcs_empty_stderr="$tmp_dir/vcs-empty.stderr"
+if common_env env GITHUB_OUTPUT="$vcs_empty_output" sh "$ROOT_DIR/scripts/ci/queue-check-updates.sh" vcs >/dev/null 2>"$vcs_empty_stderr"; then
+    die "VCS queue check succeeded without checking any VCS packages"
+fi
+grep -F -x 'check-updates[vcs]: checked=0 queued=0 skipped=0' "$vcs_empty_stderr" >/dev/null
+grep -F -x 'error: VCS update scan did not check any packages' "$vcs_empty_stderr" >/dev/null
 
 printf '%s\n' 'check-updates checks passed'

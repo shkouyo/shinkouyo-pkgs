@@ -58,6 +58,15 @@ VCS_PACKAGES='["niri-git"]' \
 grep -F -x 'matrix={"include":[{"package":"niri-git"}]}' "$tmp_dir/vcs-only.out" >/dev/null
 grep -F -x 'has_items=true' "$tmp_dir/vcs-only.out" >/dev/null
 
+REGULAR_RESULT=success \
+REGULAR_PACKAGES='[]' \
+VCS_RESULT=success \
+VCS_PACKAGES='[]' \
+    sh "$ROOT_DIR/scripts/ci/merge-package-plans.sh" >"$tmp_dir/empty.out"
+
+grep -F -x 'matrix={"include":[{"package":"no-packages"}]}' "$tmp_dir/empty.out" >/dev/null
+grep -F -x 'has_items=false' "$tmp_dir/empty.out" >/dev/null
+
 if grep -F 'x86_64-update-plan' "$ROOT_DIR/.github/workflows/_check-updates.yml" >/dev/null; then
     printf 'update planning jobs must not use cancelable update-plan concurrency\n' >&2
     exit 1

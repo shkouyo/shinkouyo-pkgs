@@ -51,11 +51,11 @@ load_packages REGULAR_RESULT REGULAR_PACKAGES >>"$packages_raw"
 printf '\n' >>"$packages_raw"
 load_packages VCS_RESULT VCS_PACKAGES >>"$packages_raw"
 printf '\n' >>"$packages_raw"
-LC_ALL=C sort -u "$packages_raw" >"$packages_sorted"
+sed '/^$/d' "$packages_raw" | LC_ALL=C sort -u >"$packages_sorted"
 
-printf 'matrix={"include":['
-first=1
 if [ -s "$packages_sorted" ]; then
+    printf 'matrix={"include":['
+    first=1
     while IFS= read -r package; do
         [ -n "$package" ] || continue
         require_package_name "$package"
@@ -67,8 +67,10 @@ if [ -s "$packages_sorted" ]; then
         fi
         printf '{"package":"%s"}' "$escaped"
     done <"$packages_sorted"
+    printf ']}\n'
+else
+    printf 'matrix={"include":[{"package":"no-packages"}]}\n'
 fi
-printf ']}\n'
 
 if [ -s "$packages_sorted" ]; then
     printf 'has_items=true\n'
