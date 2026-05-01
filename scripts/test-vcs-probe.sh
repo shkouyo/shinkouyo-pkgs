@@ -196,13 +196,15 @@ VCS_FINGERPRINT='$new_fingerprint'
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
 
-queued=$(
+pkgfiles_only_stderr="$tmp_dir/pkgfiles-only.stderr"
+pkgfiles_only_unchanged=$(
     TEST_STATE_DIR=$state_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
-    sh "$SCRIPT_DIR/check-updates.sh" vcs
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$pkgfiles_only_stderr"
 )
-[ "$queued" = 'local-vcs-git' ] || die "VCS package was not queued after upstream advanced: $queued"
+[ -z "$pkgfiles_only_unchanged" ] || die "VCS package was queued for predicted pkgfile drift only: $pkgfiles_only_unchanged"
+grep -F -x 'local-vcs-git: predicted pkgfiles changed but VCS fingerprint unchanged, skipped' "$pkgfiles_only_stderr" >/dev/null
 
 cat >"$state_dir/local-vcs-git.env" <<EOF
 STATE_VERSION=2
@@ -356,6 +358,28 @@ empty_unchanged=$(
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$plain_empty_stderr"
 )
 [ -z "$empty_unchanged" ] || die "VCS package with empty fingerprint and unchanged pkgfiles was queued: $empty_unchanged"
-grep -F -x 'plain-vcs-git: empty VCS fingerprint and pkgfiles unchanged, skipped' "$plain_empty_stderr" >/dev/null
+grep -F -x 'plain-vcs-git: empty VCS fingerprint, skipped' "$plain_empty_stderr" >/dev/null
+
+cat >"$state_dir/plain-vcs-git.env" <<EOF
+STATE_VERSION=2
+NAME='plain-vcs-git'
+SOURCE_GIT='$plain_pkgbuild_repo'
+SOURCE_REF='$plain_ref'
+LAST_SOURCE_COMMIT='$plain_commit'
+PKGNAMES='plain-vcs-git'
+PKGFILES='plain-vcs-git-0-1-any.pkg.tar.zst'
+VCS_FINGERPRINT=''
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+empty_pkgfiles_drift_stderr="$tmp_dir/empty-pkgfiles-drift.stderr"
+empty_pkgfiles_drift_unchanged=$(
+    TEST_STATE_DIR=$state_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$empty_pkgfiles_drift_stderr"
+)
+[ -z "$empty_pkgfiles_drift_unchanged" ] || die "VCS package with empty fingerprint and pkgfile drift was queued: $empty_pkgfiles_drift_unchanged"
+grep -F -x 'plain-vcs-git: predicted pkgfiles changed but VCS fingerprint is empty, skipped' "$empty_pkgfiles_drift_stderr" >/dev/null
 
 printf '%s\n' 'vcs probe regression checks passed'

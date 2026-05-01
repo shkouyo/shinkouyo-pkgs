@@ -150,10 +150,10 @@ check_vcs_package() {
     [ -f "$vcs_fingerprint_file" ] || die "probe did not produce vcs_fingerprint.txt for $NAME"
 
     current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
+    [ -n "$current_predicted_pkgfiles" ] || die "probe did not predict any package files for $NAME"
+    predicted_pkgfiles_changed=0
     if [ "$current_predicted_pkgfiles" != "$OLD_PKGFILES" ]; then
-        log "$NAME: predicted pkgfiles changed, queued"
-        queue_package "$NAME"
-        return 0
+        predicted_pkgfiles_changed=1
     fi
 
     current_vcs_fingerprint=$(normalize_vcs_fingerprint "$(awk 'NF { print; exit }' "$vcs_fingerprint_file")")
@@ -161,7 +161,11 @@ check_vcs_package() {
 
     if [ -z "$current_vcs_fingerprint" ]; then
         if [ -z "$old_vcs_fingerprint" ]; then
-            log "$NAME: empty VCS fingerprint and pkgfiles unchanged, skipped"
+            if [ "$predicted_pkgfiles_changed" -eq 1 ]; then
+                log "$NAME: predicted pkgfiles changed but VCS fingerprint is empty, skipped"
+            else
+                log "$NAME: empty VCS fingerprint, skipped"
+            fi
             skip_package
             return 0
         fi
@@ -179,6 +183,12 @@ check_vcs_package() {
     if [ "$current_vcs_fingerprint" != "$old_vcs_fingerprint" ]; then
         log "$NAME: VCS fingerprint changed, queued"
         queue_package "$NAME"
+        return 0
+    fi
+
+    if [ "$predicted_pkgfiles_changed" -eq 1 ]; then
+        log "$NAME: predicted pkgfiles changed but VCS fingerprint unchanged, skipped"
+        skip_package
         return 0
     fi
 
