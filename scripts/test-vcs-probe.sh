@@ -151,6 +151,19 @@ pkgver() {
     printf 'r%s.g%s' "\$(git rev-list --count HEAD)" "\$(git rev-parse --short HEAD)"
 }
 
+prepare() {
+    rm -rf "\$srcdir/local-vcs-git/build-cache"
+    mkdir -p "\$srcdir/local-vcs-git/build-cache/noise"
+    cd "\$srcdir/local-vcs-git/build-cache/noise"
+    git init -q
+    git config user.email test@example.invalid
+    git config user.name test
+    git config commit.gpgsign false
+    printf '%s\n' ignored > generated.txt
+    git add generated.txt
+    git -c commit.gpgsign=false commit -q -m ignored
+}
+
 package() {
     mkdir -p "\$pkgdir/usr/share/local-vcs-git"
     printf '%s\n' fixture > "\$pkgdir/usr/share/local-vcs-git/source.txt"
@@ -212,11 +225,14 @@ assert_contains_pkgfile "$new_pkgfiles" "$new_expected_pkgfile"
 [ -n "$new_fingerprint" ] || die "new VCS fingerprint was empty"
 [ "$new_fingerprint" != "$old_fingerprint" ] || die "VCS fingerprint did not change after upstream advanced"
 [ -n "$new_fingerprint_details" ] || die "new VCS fingerprint details were empty"
+case $new_fingerprint_details in
+    *build-cache*) die "VCS fingerprint included a nested build-generated Git repo: $new_fingerprint_details" ;;
+esac
 [ -n "$new_recipe_fingerprint" ] || die "new recipe fingerprint was empty"
 [ -d "$probe_dir/makepkg-builddir/local-vcs-git/src/local-vcs-git/.git" ] || die "probe did not use context makepkg BUILDDIR"
-grep -F -x "PROBE_VERSION='vcs-probe-v8'" "$probe_dir/probe.env" >/dev/null ||
+grep -F -x "PROBE_VERSION='vcs-probe-v9'" "$probe_dir/probe.env" >/dev/null ||
     die "probe.env did not include probe version"
-grep -F -x "VCS_FINGERPRINT_KIND='git-heads-sha256-v1'" "$probe_dir/probe.env" >/dev/null ||
+grep -F -x "VCS_FINGERPRINT_KIND='git-source-heads-sha256-v1'" "$probe_dir/probe.env" >/dev/null ||
     die "probe.env did not include VCS fingerprint kind"
 
 write_fake_aws "$bin_dir"
@@ -437,9 +453,9 @@ PKGNAMES='local-vcs-git'
 PKGFILES='$new_pkgfiles'
 RECIPE_FINGERPRINT='$new_recipe_fingerprint'
 VCS_FINGERPRINT='$new_fingerprint'
-PROBE_VERSION='vcs-probe-v8'
+PROBE_VERSION='vcs-probe-v9'
 RECIPE_FINGERPRINT_KIND='recipe-files-sha256-v1'
-VCS_FINGERPRINT_KIND='git-heads-sha256-v1'
+VCS_FINGERPRINT_KIND='git-source-heads-sha256-v1'
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
 
@@ -451,6 +467,76 @@ v4_unchanged=$(
     sh "$SCRIPT_DIR/check-updates.sh" vcs
 )
 [ -z "$v4_unchanged" ] || die "VCS package was queued for unchanged v4 state: $v4_unchanged"
+
+cat >"$state_dir/local-vcs-git.env" <<EOF
+STATE_VERSION=4
+NAME='local-vcs-git'
+SOURCE_GIT='$pkgbuild_repo'
+SOURCE_REF='$pkgbuild_ref'
+LAST_SOURCE_COMMIT='$pkgbuild_commit'
+PKGNAMES='local-vcs-git'
+PKGFILES='$new_pkgfiles'
+RECIPE_FINGERPRINT='$new_recipe_fingerprint'
+VCS_FINGERPRINT='$old_fingerprint'
+PROBE_VERSION='vcs-probe-v9'
+RECIPE_FINGERPRINT_KIND='recipe-files-sha256-v1'
+VCS_FINGERPRINT_KIND='git-source-heads-sha256-v1'
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+v4_changed_stderr="$tmp_dir/v4-changed.stderr"
+v4_changed=$(
+    TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$v4_changed_stderr"
+)
+[ "$v4_changed" = 'local-vcs-git' ] || die "VCS package was not queued for changed v4 state: $v4_changed"
+grep -F -x 'local-vcs-git: VCS fingerprint changed, queued' "$v4_changed_stderr" >/dev/null
+
+cat >"$state_dir/local-vcs-git.env" <<EOF
+STATE_VERSION=4
+NAME='local-vcs-git'
+SOURCE_GIT='$pkgbuild_repo'
+SOURCE_REF='$pkgbuild_ref'
+LAST_SOURCE_COMMIT='$pkgbuild_commit'
+PKGNAMES='local-vcs-git'
+PKGFILES='$new_pkgfiles'
+RECIPE_FINGERPRINT='$new_recipe_fingerprint'
+VCS_FINGERPRINT='legacy-v8-noisy-fingerprint'
+PROBE_VERSION='vcs-probe-v8'
+RECIPE_FINGERPRINT_KIND='recipe-files-sha256-v1'
+VCS_FINGERPRINT_KIND='git-heads-sha256-v1'
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+legacy_v4_stderr="$tmp_dir/legacy-v4.stderr"
+legacy_v4_unchanged=$(
+    TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$legacy_v4_stderr"
+)
+[ -z "$legacy_v4_unchanged" ] || die "VCS package was queued for legacy v4 fingerprint kind migration: $legacy_v4_unchanged"
+grep -F -x 'local-vcs-git: legacy VCS fingerprint kind changed, skipped' "$legacy_v4_stderr" >/dev/null
+
+cat >"$state_dir/local-vcs-git.env" <<EOF
+STATE_VERSION=4
+NAME='local-vcs-git'
+SOURCE_GIT='$pkgbuild_repo'
+SOURCE_REF='$pkgbuild_ref'
+LAST_SOURCE_COMMIT='$pkgbuild_commit'
+PKGNAMES='local-vcs-git'
+PKGFILES='$new_pkgfiles'
+RECIPE_FINGERPRINT='$new_recipe_fingerprint'
+VCS_FINGERPRINT='$new_fingerprint'
+PROBE_VERSION='vcs-probe-v9'
+RECIPE_FINGERPRINT_KIND='recipe-files-sha256-v1'
+VCS_FINGERPRINT_KIND='git-source-heads-sha256-v1'
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
 
 (
     cd "$upstream_repo"
@@ -684,9 +770,9 @@ PKGNAMES='broken-vcs-git'
 PKGFILES='broken-vcs-git-1-1-any.pkg.tar.zst'
 RECIPE_FINGERPRINT='old-recipe'
 VCS_FINGERPRINT=''
-PROBE_VERSION='vcs-probe-v8'
+PROBE_VERSION='vcs-probe-v9'
 RECIPE_FINGERPRINT_KIND='recipe-files-sha256-v1'
-VCS_FINGERPRINT_KIND='git-heads-sha256-v1'
+VCS_FINGERPRINT_KIND='git-source-heads-sha256-v1'
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
 

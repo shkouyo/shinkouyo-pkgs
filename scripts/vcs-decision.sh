@@ -2,7 +2,8 @@
 
 set -eu
 
-VCS_EXPECTED_FINGERPRINT_KIND='git-heads-sha256-v1'
+VCS_EXPECTED_FINGERPRINT_KIND='git-source-heads-sha256-v1'
+VCS_LEGACY_FINGERPRINT_KIND='git-heads-sha256-v1'
 
 normalize_vcs_fingerprint() {
     fingerprint=$1
@@ -39,8 +40,11 @@ vcs_state_fingerprint_for_compare() {
             printf '%s\n' "$fingerprint"
             ;;
         4)
-            if [ -n "$fingerprint" ] && [ "$fingerprint_kind" != "$VCS_EXPECTED_FINGERPRINT_KIND" ]; then
-                return 1
+            if [ -n "$fingerprint" ]; then
+                case $fingerprint_kind in
+                    "$VCS_EXPECTED_FINGERPRINT_KIND"|"$VCS_LEGACY_FINGERPRINT_KIND") ;;
+                    *) return 1 ;;
+                esac
             fi
             printf '%s\n' "$fingerprint"
             ;;
@@ -77,6 +81,7 @@ vcs_decide_probe_result() {
     current_pkgfiles=$6
     current_vcs_fingerprint=$7
     current_vcs_details=$8
+    current_pkgfiles_exist=$9
 
     VCS_DECISION=queue
     VCS_DECISION_LOG="$name: unknown VCS state, queued"
@@ -112,6 +117,15 @@ vcs_decide_probe_result() {
     fi
 
     if [ "$current_vcs_compare" != "$old_vcs_compare" ]; then
+        if [ "$old_state_version" = "4" ] && [ "$old_vcs_fingerprint_kind" = "$VCS_LEGACY_FINGERPRINT_KIND" ]; then
+            if [ "$current_pkgfiles" = "$old_pkgfiles" ] || [ "$current_pkgfiles_exist" = "1" ]; then
+                VCS_DECISION=skip
+                VCS_DECISION_LOG="$name: legacy VCS fingerprint kind changed, skipped"
+                return 0
+            fi
+            VCS_DECISION_LOG="$name: legacy VCS fingerprint kind changed and predicted package files are missing, queued"
+            return 0
+        fi
         VCS_DECISION_LOG="$name: VCS fingerprint changed, queued"
         return 0
     fi

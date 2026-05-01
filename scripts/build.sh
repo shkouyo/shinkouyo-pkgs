@@ -20,9 +20,9 @@ EOF
 }
 
 PROBE_LOG_TAIL_LINES=50
-PROBE_VERSION='vcs-probe-v8'
+PROBE_VERSION='vcs-probe-v9'
 RECIPE_FINGERPRINT_KIND='recipe-files-sha256-v1'
-VCS_FINGERPRINT_KIND='git-heads-sha256-v1'
+VCS_FINGERPRINT_KIND='git-source-heads-sha256-v1'
 
 print_log_tail() {
     label=$1
@@ -166,7 +166,8 @@ write_vcs_fingerprint_root() {
     fingerprint_root_tmp_file=$(mktemp)
     : >"$fingerprint_root_tmp_file"
 
-    find "$fingerprint_root" -name .git -print -prune | while IFS= read -r fingerprint_git_meta; do
+    for fingerprint_git_meta in "$fingerprint_root/.git" "$fingerprint_root"/*/.git; do
+        [ -e "$fingerprint_git_meta" ] || continue
         fingerprint_repo_dir=$(dirname "$fingerprint_git_meta")
         append_git_repo_fingerprint "$fingerprint_root" "$fingerprint_repo_dir" "$fingerprint_root_tmp_file"
     done

@@ -148,6 +148,10 @@ check_vcs_package() {
     [ -n "$current_predicted_pkgfiles" ] || die "probe did not predict any package files for $NAME"
     current_vcs_fingerprint=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
     current_vcs_details=$(cat "$vcs_fingerprint_details_file")
+    current_predicted_pkgfiles_exist=0
+    if repo_pkgfiles_exist "$current_predicted_pkgfiles"; then
+        current_predicted_pkgfiles_exist=1
+    fi
 
     vcs_decide_probe_result \
         "$NAME" \
@@ -157,7 +161,8 @@ check_vcs_package() {
         "${OLD_VCS_FINGERPRINT_KIND-}" \
         "$current_predicted_pkgfiles" \
         "$current_vcs_fingerprint" \
-        "$current_vcs_details"
+        "$current_vcs_details" \
+        "$current_predicted_pkgfiles_exist"
 
     log "$VCS_DECISION_LOG"
     if [ "$VCS_DECISION" = "queue" ]; then
