@@ -44,4 +44,7 @@ jobs:
       - name: Run VCS probe regression test
         run: |
           set -eu
-          sh scripts/ci/run-probe-user.sh sh scripts/test-vcs-probe.sh
+          output_file="$RUNNER_TEMP/vcs-probe-regression.out"
+          sh scripts/ci/run-probe-user.sh sh scripts/test-vcs-probe.sh > "$output_file" 2>&1
+          cat "$output_file"
+          grep -F -x 'vcs probe regression checks passed' "$output_file"

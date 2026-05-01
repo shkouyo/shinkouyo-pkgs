@@ -19,8 +19,7 @@ mkdir -p "$probe_tmp"
 
 if [ "$(id -u)" != '0' ]; then
     log "probe helper: current user is not root, running without user switch"
-    env HOME="$probe_home" TMPDIR="$probe_tmp" "$@"
-    exit 0
+    exec env HOME="$probe_home" TMPDIR="$probe_tmp" "$@"
 fi
 
 if ! id "$probe_user" >/dev/null 2>&1; then
@@ -34,9 +33,9 @@ for arg in "$@"; do
     escaped_args="${escaped_args}${escaped_args:+ }$(shell_quote "$arg")"
 done
 
-env HOME="$probe_home" TMPDIR="$probe_tmp" su -m "$probe_user" -s /bin/sh -c "
+env HOME="$probe_home" TMPDIR="$probe_tmp" su -m -s /bin/sh -c "
     set -eu
     cd $(shell_quote "$ROOT_DIR")
     printf 'probe_user=%s uid=%s home=%s tmpdir=%s\n' \"\$(id -un)\" \"\$(id -u)\" \"\$HOME\" \"\${TMPDIR-}\" >&2
     exec $escaped_args
-"
+" "$probe_user"
