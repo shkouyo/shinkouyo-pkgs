@@ -192,8 +192,10 @@ probe_dir="$tmp_dir/probe-old"
 "$SCRIPT_DIR/build.sh" probe-vcs "$packages_dir/local-vcs-git.sh" "$probe_dir"
 old_pkgfiles=$(cat "$probe_dir/predicted_pkgfiles.txt")
 old_fingerprint=$(cat "$probe_dir/vcs_fingerprint.txt")
+old_fingerprint_details=$(tr '\n' ' ' <"$probe_dir/vcs_fingerprint.details" | sed 's/[[:space:]]*$//')
 assert_contains_pkgfile "$old_pkgfiles" "$old_expected_pkgfile"
 [ -n "$old_fingerprint" ] || die "old VCS fingerprint was empty"
+[ -n "$old_fingerprint_details" ] || die "old VCS fingerprint details were empty"
 
 printf '%s\n' two >>"$upstream_repo/source.txt"
 git_commit "$upstream_repo" two
@@ -203,13 +205,27 @@ probe_dir="$tmp_dir/probe-new"
 "$SCRIPT_DIR/build.sh" probe-vcs "$packages_dir/local-vcs-git.sh" "$probe_dir"
 new_pkgfiles=$(cat "$probe_dir/predicted_pkgfiles.txt")
 new_fingerprint=$(cat "$probe_dir/vcs_fingerprint.txt")
+new_fingerprint_details=$(tr '\n' ' ' <"$probe_dir/vcs_fingerprint.details" | sed 's/[[:space:]]*$//')
+new_recipe_fingerprint=$(cat "$probe_dir/recipe_fingerprint.txt")
 assert_contains_pkgfile "$new_pkgfiles" "$new_expected_pkgfile"
 [ "$new_pkgfiles" != "$old_pkgfiles" ] || die "VCS probe did not change after upstream advanced"
 [ -n "$new_fingerprint" ] || die "new VCS fingerprint was empty"
 [ "$new_fingerprint" != "$old_fingerprint" ] || die "VCS fingerprint did not change after upstream advanced"
+[ -n "$new_fingerprint_details" ] || die "new VCS fingerprint details were empty"
+[ -n "$new_recipe_fingerprint" ] || die "new recipe fingerprint was empty"
 [ -d "$probe_dir/makepkg-builddir/local-vcs-git/src/local-vcs-git/.git" ] || die "probe did not use context makepkg BUILDDIR"
 
 write_fake_aws "$bin_dir"
+
+mkdir -p "$object_dir/$PKG_PREFIX"
+for old_pkgfile in $old_pkgfiles; do
+    : >"$object_dir/$PKG_PREFIX/$old_pkgfile"
+    : >"$object_dir/$PKG_PREFIX/$old_pkgfile.sig"
+done
+for new_pkgfile in $new_pkgfiles; do
+    : >"$object_dir/$PKG_PREFIX/$new_pkgfile"
+    : >"$object_dir/$PKG_PREFIX/$new_pkgfile.sig"
+done
 
 cat >"$state_dir/local-vcs-git.env" <<EOF
 STATE_VERSION=2
@@ -226,6 +242,7 @@ EOF
 missing_fingerprint_unchanged_stderr="$tmp_dir/missing-fingerprint-unchanged.stderr"
 missing_fingerprint_unchanged=$(
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$missing_fingerprint_unchanged_stderr"
@@ -245,9 +262,14 @@ VCS_FINGERPRINT=''
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
 
+for new_pkgfile in $new_pkgfiles; do
+    rm -f "$object_dir/$PKG_PREFIX/$new_pkgfile" "$object_dir/$PKG_PREFIX/$new_pkgfile.sig"
+done
+
 missing_fingerprint_changed_stderr="$tmp_dir/missing-fingerprint-changed.stderr"
 missing_fingerprint_changed=$(
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$missing_fingerprint_changed_stderr"
@@ -255,7 +277,6 @@ missing_fingerprint_changed=$(
 [ "$missing_fingerprint_changed" = 'local-vcs-git' ] || die "VCS package was not queued with missing fingerprint and changed pkgfiles: $missing_fingerprint_changed"
 grep -F -x 'local-vcs-git: missing previous VCS fingerprint and predicted pkgfiles changed, queued' "$missing_fingerprint_changed_stderr" >/dev/null
 
-mkdir -p "$object_dir/$PKG_PREFIX"
 for new_pkgfile in $new_pkgfiles; do
     : >"$object_dir/$PKG_PREFIX/$new_pkgfile"
     : >"$object_dir/$PKG_PREFIX/$new_pkgfile.sig"
@@ -280,19 +301,20 @@ SOURCE_REF='$pkgbuild_ref'
 LAST_SOURCE_COMMIT='$pkgbuild_commit'
 PKGNAMES='local-vcs-git'
 PKGFILES='$old_pkgfiles'
-VCS_FINGERPRINT='$new_fingerprint'
+VCS_FINGERPRINT='$new_fingerprint_details'
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
 
 pkgfiles_only_stderr="$tmp_dir/pkgfiles-only.stderr"
 pkgfiles_only_unchanged=$(
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$pkgfiles_only_stderr"
 )
 [ -z "$pkgfiles_only_unchanged" ] || die "VCS package was queued for predicted pkgfile drift only: $pkgfiles_only_unchanged"
-grep -F -x 'local-vcs-git: predicted pkgfiles changed but VCS fingerprint unchanged, skipped' "$pkgfiles_only_stderr" >/dev/null
+grep -F -x 'local-vcs-git: predicted pkgfiles changed but existing package files are already present, skipped' "$pkgfiles_only_stderr" >/dev/null
 
 cat >"$state_dir/local-vcs-git.env" <<EOF
 STATE_VERSION=2
@@ -302,12 +324,13 @@ SOURCE_REF='$pkgbuild_ref'
 LAST_SOURCE_COMMIT='$pkgbuild_commit'
 PKGNAMES='local-vcs-git'
 PKGFILES='$new_pkgfiles'
-VCS_FINGERPRINT='$old_fingerprint'
+VCS_FINGERPRINT='$old_fingerprint_details'
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
 
 queued=$(
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs
@@ -322,19 +345,20 @@ SOURCE_REF='$pkgbuild_ref'
 LAST_SOURCE_COMMIT='$pkgbuild_commit'
 PKGNAMES='local-vcs-git'
 PKGFILES='$new_pkgfiles'
-VCS_FINGERPRINT='$new_fingerprint'
+VCS_FINGERPRINT='$new_fingerprint_details'
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
 
 unchanged=$(
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs
 )
 [ -z "$unchanged" ] || die "VCS package was queued without source, fingerprint, or pkgfile changes: $unchanged"
 
-noisy_fingerprint="$new_fingerprint local-vcs-git ref refs/remotes/origin/main 0000000000000000000000000000000000000000 local-vcs-git ref refs/tags/noise 1111111111111111111111111111111111111111"
+noisy_fingerprint="$new_fingerprint_details local-vcs-git ref refs/remotes/origin/main 0000000000000000000000000000000000000000 local-vcs-git ref refs/tags/noise 1111111111111111111111111111111111111111"
 cat >"$state_dir/local-vcs-git.env" <<EOF
 STATE_VERSION=2
 NAME='local-vcs-git'
@@ -349,6 +373,7 @@ EOF
 
 legacy_unchanged=$(
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs
@@ -363,11 +388,51 @@ legacy_unchanged=$(
 
 ref_noise_unchanged=$(
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs
 )
 [ -z "$ref_noise_unchanged" ] || die "VCS package was queued for upstream ref-only changes: $ref_noise_unchanged"
+
+cat >"$state_dir/local-vcs-git.env" <<EOF
+STATE_VERSION=3
+NAME='local-vcs-git'
+SOURCE_GIT='$pkgbuild_repo'
+SOURCE_REF='$pkgbuild_ref'
+LAST_SOURCE_COMMIT='$pkgbuild_commit'
+PKGNAMES='local-vcs-git'
+PKGFILES='$new_pkgfiles'
+RECIPE_FINGERPRINT='$new_recipe_fingerprint'
+VCS_FINGERPRINT='$new_fingerprint'
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+printf '%s\n' 'generated = 1' >"$pkgbuild_repo/.SRCINFO"
+git_commit "$pkgbuild_repo" srcinfo
+
+srcinfo_noise_unchanged=$(
+    TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs
+)
+[ -z "$srcinfo_noise_unchanged" ] || die "VCS package was queued for .SRCINFO-only changes: $srcinfo_noise_unchanged"
+
+printf '%s\n' '# recipe input changed' >>"$pkgbuild_repo/PKGBUILD"
+git_commit "$pkgbuild_repo" recipe
+
+recipe_changed=$(
+    TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs
+)
+[ "$recipe_changed" = 'local-vcs-git' ] || die "VCS package was not queued after recipe changed: $recipe_changed"
+
+rm -f "$packages_dir/local-vcs-git.sh"
 
 plain_pkgbuild_repo="$tmp_dir/plain-pkgbuild-repo"
 mkdir -p "$plain_pkgbuild_repo"
@@ -426,6 +491,11 @@ case " $plain_pkgfiles " in
 esac
 [ -z "$plain_fingerprint" ] || die "plain VCS probe unexpectedly produced fingerprint: $plain_fingerprint"
 
+for plain_pkgfile in $plain_pkgfiles plain-vcs-git-0-1-any.pkg.tar.zst; do
+    : >"$object_dir/$PKG_PREFIX/$plain_pkgfile"
+    : >"$object_dir/$PKG_PREFIX/$plain_pkgfile.sig"
+done
+
 cat >"$state_dir/plain-vcs-git.env" <<EOF
 STATE_VERSION=2
 NAME='plain-vcs-git'
@@ -441,6 +511,7 @@ EOF
 plain_empty_stderr="$tmp_dir/plain-empty.stderr"
 empty_unchanged=$(
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$plain_empty_stderr"
@@ -463,11 +534,12 @@ EOF
 empty_pkgfiles_drift_stderr="$tmp_dir/empty-pkgfiles-drift.stderr"
 empty_pkgfiles_drift_unchanged=$(
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$empty_pkgfiles_drift_stderr"
 )
 [ -z "$empty_pkgfiles_drift_unchanged" ] || die "VCS package with empty fingerprint and pkgfile drift was queued: $empty_pkgfiles_drift_unchanged"
-grep -F -x 'plain-vcs-git: predicted pkgfiles changed but VCS fingerprint is empty, skipped' "$empty_pkgfiles_drift_stderr" >/dev/null
+grep -F -x 'plain-vcs-git: predicted pkgfiles changed but existing package files are already present, skipped' "$empty_pkgfiles_drift_stderr" >/dev/null
 
 printf '%s\n' 'vcs probe regression checks passed'

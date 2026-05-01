@@ -20,7 +20,7 @@ EOF
 }
 
 PROBE_LOG_TAIL_LINES=50
-PROBE_VERSION='vcs-probe-v6'
+PROBE_VERSION='vcs-probe-v7'
 
 print_log_tail() {
     label=$1
@@ -116,6 +116,10 @@ run_probe_packagelist() {
     makepkg --packagelist --nodeps --skipinteg --holdver --nosign -p "$BUILD_PKGBUILD"
 }
 
+file_sha256() {
+    sha256sum "$1" | awk '{ print $1 }'
+}
+
 probe_extract_pkgfiles() {
     input_file=$1
     output_file=$2
@@ -181,7 +185,7 @@ write_vcs_fingerprint_makepkg_builddir() {
     done
 }
 
-write_vcs_fingerprint() {
+write_vcs_fingerprint_details() {
     fingerprint_output_file=$1
 
     fingerprint_tmp_file=$(mktemp)
@@ -193,8 +197,46 @@ write_vcs_fingerprint() {
     if [ -n "${BUILDDIR-}" ] && [ "$BUILDDIR" != "${MAKEPKG_BUILDDIR-}" ]; then
         write_vcs_fingerprint_makepkg_builddir "$BUILDDIR" "$fingerprint_tmp_file"
     fi
-    LC_ALL=C sort -u "$fingerprint_tmp_file" | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$fingerprint_output_file"
+    LC_ALL=C sort -u "$fingerprint_tmp_file" >"$fingerprint_output_file"
     rm -f "$fingerprint_tmp_file"
+}
+
+write_vcs_fingerprint() {
+    fingerprint_output_file=$1
+
+    fingerprint_detail_file=$(mktemp)
+    write_vcs_fingerprint_details "$fingerprint_detail_file"
+    if [ -s "$fingerprint_detail_file" ]; then
+        file_sha256 "$fingerprint_detail_file" >"$fingerprint_output_file"
+    else
+        : >"$fingerprint_output_file"
+    fi
+    rm -f "$fingerprint_detail_file"
+}
+
+write_recipe_fingerprint() {
+    recipe_output_file=$1
+
+    recipe_tmp_file=$(mktemp)
+    : >"$recipe_tmp_file"
+    (
+        cd "$BUILD_DIR"
+        find . \
+            \( -path './.git' -o -path './.git/*' \
+            -o -path './src' -o -path './src/*' \
+            -o -path './pkg' -o -path './pkg/*' \
+            -o -name '.SRCINFO' \
+            -o -name '*.pkg.tar' -o -name '*.pkg.tar.*' \) -prune \
+            -o -type f -print |
+            LC_ALL=C sort |
+            while IFS= read -r recipe_file; do
+                [ -n "$recipe_file" ] || continue
+                printf '%s %s\n' "$(file_sha256 "$recipe_file")" "$recipe_file"
+            done
+    ) >"$recipe_tmp_file"
+
+    file_sha256 "$recipe_tmp_file" >"$recipe_output_file"
+    rm -f "$recipe_tmp_file"
 }
 
 run_probe_attempt_makepkg() {
@@ -225,6 +267,7 @@ run_probe_attempt() {
 
     require_cmd makepkg
     require_cmd git
+    require_cmd sha256sum
 
     log "probe[$PROBE_VERSION]: backend=makepkg package=$NAME strategy=$strategy"
     if ! run_probe_attempt_makepkg "$strategy"; then
@@ -250,7 +293,9 @@ probe_vcs() {
     probe_stdout_file="$context_dir/predicted_pkgfiles.stdout"
     probe_stderr_file="$context_dir/predicted_pkgfiles.stderr"
     raw_pkglist_file="$context_dir/predicted_pkgfiles.raw"
+    recipe_fingerprint_file="$context_dir/recipe_fingerprint.txt"
     vcs_fingerprint_file="$context_dir/vcs_fingerprint.txt"
+    vcs_fingerprint_details_file="$context_dir/vcs_fingerprint.details"
     if ! run_probe_attempt nobuild-packagelist; then
         print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stdout for $NAME" "$probe_stdout_file"
         print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stderr for $NAME" "$probe_stderr_file"
@@ -263,6 +308,14 @@ probe_vcs() {
         print_log_tail "probe[$PROBE_VERSION]: nobuild-packagelist stderr for $NAME" "$probe_stderr_file"
         die "probe did not predict any package files for $NAME"
     fi
+
+    write_recipe_fingerprint "$recipe_fingerprint_file"
+    write_vcs_fingerprint_details "$vcs_fingerprint_details_file"
+    if [ -s "$vcs_fingerprint_details_file" ]; then
+        file_sha256 "$vcs_fingerprint_details_file" >"$vcs_fingerprint_file"
+    else
+        : >"$vcs_fingerprint_file"
+    fi
 }
 
 collect() {
@@ -270,6 +323,7 @@ collect() {
     require_publish_env
     require_cmd gpg
     require_cmd git
+    require_cmd sha256sum
 
     # shellcheck disable=SC1090
     . "$context_dir/context.env"
@@ -308,10 +362,13 @@ collect() {
     BUILT_AT=$(date -u +%FT%TZ)
     PKGNAMES=$pkgnames
     PKGFILES=$pkgfiles
+    recipe_fingerprint_file="$context_dir/recipe_fingerprint.txt"
+    write_recipe_fingerprint "$recipe_fingerprint_file"
+    RECIPE_FINGERPRINT=$(cat "$recipe_fingerprint_file")
     fingerprint_file="$context_dir/vcs_fingerprint.txt"
     write_vcs_fingerprint "$fingerprint_file"
     VCS_FINGERPRINT=$(cat "$fingerprint_file")
-    export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES VCS_FINGERPRINT BUILT_AT
+    export NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES RECIPE_FINGERPRINT VCS_FINGERPRINT BUILT_AT
     state_write_file "$context_dir/state.env"
 }
 

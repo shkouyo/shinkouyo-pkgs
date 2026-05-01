@@ -20,13 +20,14 @@ state_local_path() {
 state_write_file() {
     output_file=$1
     {
-        printf 'STATE_VERSION=2\n'
+        printf 'STATE_VERSION=3\n'
         printf 'NAME=%s\n' "$(shell_quote "$NAME")"
         printf 'SOURCE_GIT=%s\n' "$(shell_quote "$SOURCE_GIT")"
         printf 'SOURCE_REF=%s\n' "$(shell_quote "$SOURCE_REF")"
         printf 'LAST_SOURCE_COMMIT=%s\n' "$(shell_quote "$LAST_SOURCE_COMMIT")"
         printf 'PKGNAMES=%s\n' "$(shell_quote "$PKGNAMES")"
         printf 'PKGFILES=%s\n' "$(shell_quote "$PKGFILES")"
+        printf 'RECIPE_FINGERPRINT=%s\n' "$(shell_quote "${RECIPE_FINGERPRINT-}")"
         printf 'VCS_FINGERPRINT=%s\n' "$(shell_quote "${VCS_FINGERPRINT-}")"
         printf 'BUILT_AT=%s\n' "$(shell_quote "$BUILT_AT")"
     } >"$output_file"
@@ -36,15 +37,21 @@ state_load() {
     state_file=$1
     [ -f "$state_file" ] || die "state not found: $state_file"
 
-    unset STATE_VERSION NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES VCS_FINGERPRINT BUILT_AT 2>/dev/null || :
+    unset STATE_VERSION NAME SOURCE_GIT SOURCE_REF LAST_SOURCE_COMMIT PKGNAMES PKGFILES RECIPE_FINGERPRINT VCS_FINGERPRINT BUILT_AT 2>/dev/null || :
     # shellcheck disable=SC1090
     . "$state_file"
 
     case "${STATE_VERSION-}" in
         1)
+            : "${RECIPE_FINGERPRINT:=}"
             : "${VCS_FINGERPRINT:=}"
             ;;
         2)
+            : "${RECIPE_FINGERPRINT:=}"
+            [ -n "${VCS_FINGERPRINT+x}" ] || die "missing VCS_FINGERPRINT in $state_file"
+            ;;
+        3)
+            [ -n "${RECIPE_FINGERPRINT+x}" ] || die "missing RECIPE_FINGERPRINT in $state_file"
             [ -n "${VCS_FINGERPRINT+x}" ] || die "missing VCS_FINGERPRINT in $state_file"
             ;;
         *)
@@ -67,12 +74,14 @@ state_emit_prefixed() {
 
     (
         state_load "$state_file"
+        printf '%s_STATE_VERSION=%s\n' "$prefix" "$(shell_quote "$STATE_VERSION")"
         printf '%s_NAME=%s\n' "$prefix" "$(shell_quote "$NAME")"
         printf '%s_SOURCE_GIT=%s\n' "$prefix" "$(shell_quote "$SOURCE_GIT")"
         printf '%s_SOURCE_REF=%s\n' "$prefix" "$(shell_quote "$SOURCE_REF")"
         printf '%s_LAST_SOURCE_COMMIT=%s\n' "$prefix" "$(shell_quote "$LAST_SOURCE_COMMIT")"
         printf '%s_PKGNAMES=%s\n' "$prefix" "$(shell_quote "$PKGNAMES")"
         printf '%s_PKGFILES=%s\n' "$prefix" "$(shell_quote "$PKGFILES")"
+        printf '%s_RECIPE_FINGERPRINT=%s\n' "$prefix" "$(shell_quote "${RECIPE_FINGERPRINT-}")"
         printf '%s_VCS_FINGERPRINT=%s\n' "$prefix" "$(shell_quote "${VCS_FINGERPRINT-}")"
         printf '%s_BUILT_AT=%s\n' "$prefix" "$(shell_quote "$BUILT_AT")"
     )

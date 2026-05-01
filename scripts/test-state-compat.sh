@@ -37,6 +37,19 @@ VCS_FINGERPRINT=''
 BUILT_AT='2026-01-02T00:00:00Z'
 EOF
 
+cat >"$tmp_dir/v3.env" <<'EOF'
+STATE_VERSION=3
+NAME='demo'
+SOURCE_GIT='https://example.invalid/demo.git'
+SOURCE_REF='main'
+LAST_SOURCE_COMMIT='fedcba'
+PKGNAMES='demo'
+PKGFILES='demo-3-1-any.pkg.tar.zst'
+RECIPE_FINGERPRINT='recipe123'
+VCS_FINGERPRINT='vcs123'
+BUILT_AT='2026-01-03T00:00:00Z'
+EOF
+
 cat >"$tmp_dir/bad-name.env" <<'EOF'
 STATE_VERSION=2
 NAME='../bad'
@@ -51,12 +64,20 @@ EOF
 
 state_load "$tmp_dir/v1.env"
 [ "$NAME" = 'demo' ]
+[ "$RECIPE_FINGERPRINT" = '' ]
 [ "$VCS_FINGERPRINT" = '' ]
 
 eval "$(state_emit_prefixed OLD "$tmp_dir/v2.env")"
+[ "$OLD_STATE_VERSION" = '2' ]
 [ "$OLD_NAME" = 'demo' ]
 [ "$OLD_LAST_SOURCE_COMMIT" = 'def456' ]
 [ "$OLD_PKGFILES" = 'demo-2-1-any.pkg.tar.zst' ]
+[ "$OLD_RECIPE_FINGERPRINT" = '' ]
+
+eval "$(state_emit_prefixed OLD "$tmp_dir/v3.env")"
+[ "$OLD_STATE_VERSION" = '3' ]
+[ "$OLD_RECIPE_FINGERPRINT" = 'recipe123' ]
+[ "$OLD_VCS_FINGERPRINT" = 'vcs123' ]
 
 if ( state_load "$tmp_dir/bad-name.env" ) >/dev/null 2>&1; then
     die 'state_load accepted an invalid package name'

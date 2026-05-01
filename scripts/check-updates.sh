@@ -79,19 +79,25 @@ normalize_vcs_fingerprint() {
     ' | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//'
 }
 
-predicted_pkgfiles_exist() {
-    predicted_pkgfiles=$1
+state_pkgfiles_exist() {
+    state_pkgfiles=$1
 
-    for predicted_pkgfile in $predicted_pkgfiles; do
-        if ! s3_object_exists "$PKG_PREFIX/$predicted_pkgfile"; then
+    for state_pkgfile in $state_pkgfiles; do
+        if ! s3_object_exists "$PKG_PREFIX/$state_pkgfile"; then
             return 1
         fi
-        if ! s3_object_exists "$PKG_PREFIX/$predicted_pkgfile.sig"; then
+        if ! s3_object_exists "$PKG_PREFIX/$state_pkgfile.sig"; then
             return 1
         fi
     done
 
     return 0
+}
+
+predicted_pkgfiles_exist() {
+    predicted_pkgfiles=$1
+
+    state_pkgfiles_exist "$predicted_pkgfiles"
 }
 
 check_regular_package() {
@@ -107,6 +113,12 @@ check_regular_package() {
     fi
 
     eval "$(state_emit_prefixed OLD "$state_file")"
+    if ! state_pkgfiles_exist "$OLD_PKGFILES"; then
+        log "$NAME: state package files missing, queued"
+        queue_package "$NAME"
+        return 0
+    fi
+
     remote_line=$(git ls-remote "$manifest_source_git" "$manifest_source_ref" | awk 'NR==1{print $1}')
     [ -n "$remote_line" ] || die "failed to resolve remote ref for $NAME"
     if [ "$remote_line" != "$OLD_LAST_SOURCE_COMMIT" ]; then
@@ -134,8 +146,9 @@ check_vcs_package() {
 
     remote_line=$(git ls-remote "$SOURCE_GIT" "$SOURCE_REF" | awk 'NR==1{print $1}')
     [ -n "$remote_line" ] || die "failed to resolve remote ref for $NAME"
-    if [ "$remote_line" != "$OLD_LAST_SOURCE_COMMIT" ]; then
-        log "$NAME: source commit changed, queued"
+
+    if ! state_pkgfiles_exist "$OLD_PKGFILES"; then
+        log "$NAME: state package files missing, queued"
         queue_package "$NAME"
         return 0
     fi
@@ -154,15 +167,17 @@ check_vcs_package() {
         log_file_tail "$NAME: probe stdout tail" "$probe_stdout"
         log_file_tail "$NAME: predicted stderr tail" "$probe_dir/predicted_pkgfiles.stderr"
         log_file_tail "$NAME: predicted stdout tail" "$probe_dir/predicted_pkgfiles.stdout"
-        log "$NAME: probe failed, queued"
-        queue_package "$NAME"
-        return 0
+        die "$NAME: probe failed"
     fi
 
     predicted_pkgfiles_file="$probe_dir/predicted_pkgfiles.txt"
     [ -f "$predicted_pkgfiles_file" ] || die "probe did not produce predicted_pkgfiles.txt for $NAME"
+    recipe_fingerprint_file="$probe_dir/recipe_fingerprint.txt"
+    [ -f "$recipe_fingerprint_file" ] || die "probe did not produce recipe_fingerprint.txt for $NAME"
     vcs_fingerprint_file="$probe_dir/vcs_fingerprint.txt"
     [ -f "$vcs_fingerprint_file" ] || die "probe did not produce vcs_fingerprint.txt for $NAME"
+    vcs_fingerprint_details_file="$probe_dir/vcs_fingerprint.details"
+    [ -f "$vcs_fingerprint_details_file" ] || die "probe did not produce vcs_fingerprint.details for $NAME"
 
     current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
     [ -n "$current_predicted_pkgfiles" ] || die "probe did not predict any package files for $NAME"
@@ -171,13 +186,38 @@ check_vcs_package() {
         predicted_pkgfiles_changed=1
     fi
 
-    current_vcs_fingerprint=$(normalize_vcs_fingerprint "$(awk 'NF { print; exit }' "$vcs_fingerprint_file")")
-    old_vcs_fingerprint=$(normalize_vcs_fingerprint "$OLD_VCS_FINGERPRINT")
+    current_recipe_fingerprint=$(awk 'NF { print; exit }' "$recipe_fingerprint_file")
+    [ -n "$current_recipe_fingerprint" ] || die "probe did not produce a recipe fingerprint for $NAME"
+    if [ -n "${OLD_RECIPE_FINGERPRINT-}" ]; then
+        if [ "$current_recipe_fingerprint" != "$OLD_RECIPE_FINGERPRINT" ]; then
+            log "$NAME: recipe fingerprint changed, queued"
+            queue_package "$NAME"
+            return 0
+        fi
+    elif [ "$remote_line" != "$OLD_LAST_SOURCE_COMMIT" ]; then
+        log "$NAME: source commit changed and previous recipe fingerprint is missing, queued"
+        queue_package "$NAME"
+        return 0
+    fi
+
+    current_vcs_fingerprint=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
+    if [ "${OLD_STATE_VERSION-}" = "3" ]; then
+        old_vcs_fingerprint=$OLD_VCS_FINGERPRINT
+    else
+        old_vcs_fingerprint=$(normalize_vcs_fingerprint "$OLD_VCS_FINGERPRINT")
+        current_vcs_fingerprint=$(normalize_vcs_fingerprint "$(cat "$vcs_fingerprint_details_file")")
+    fi
 
     if [ -z "$current_vcs_fingerprint" ]; then
         if [ -z "$old_vcs_fingerprint" ]; then
             if [ "$predicted_pkgfiles_changed" -eq 1 ]; then
-                log "$NAME: predicted pkgfiles changed but VCS fingerprint is empty, skipped"
+                if predicted_pkgfiles_exist "$current_predicted_pkgfiles"; then
+                    log "$NAME: predicted pkgfiles changed but existing package files are already present, skipped"
+                else
+                    log "$NAME: predicted pkgfiles changed and package files are missing, queued"
+                    queue_package "$NAME"
+                    return 0
+                fi
             else
                 log "$NAME: empty VCS fingerprint, skipped"
             fi
@@ -212,7 +252,13 @@ check_vcs_package() {
     fi
 
     if [ "$predicted_pkgfiles_changed" -eq 1 ]; then
-        log "$NAME: predicted pkgfiles changed but VCS fingerprint unchanged, skipped"
+        if predicted_pkgfiles_exist "$current_predicted_pkgfiles"; then
+            log "$NAME: predicted pkgfiles changed but existing package files are already present, skipped"
+        else
+            log "$NAME: predicted pkgfiles changed and package files are missing, queued"
+            queue_package "$NAME"
+            return 0
+        fi
         skip_package
         return 0
     fi

@@ -36,22 +36,47 @@ write_fake_aws() {
 
 set -eu
 
-[ "$#" -ge 6 ] || exit 2
-[ "$1" = "s3" ] || exit 2
-[ "$2" = "cp" ] || exit 2
-shift 2
+case "${1-}:${2-}" in
+    s3:cp)
+        [ "$#" -ge 6 ] || exit 2
+        shift 2
 
-if [ "${1-}" = "--endpoint-url" ]; then
-    shift 2
-fi
+        if [ "${1-}" = "--endpoint-url" ]; then
+            shift 2
+        fi
 
-src=$1
-dest=$2
+        src=$1
+        dest=$2
 
-case $src in
-    s3://*/.state/x86_64/*.env)
-        file=${src##*/}
-        cp "$TEST_STATE_DIR/$file" "$dest"
+        case $src in
+            s3://*/.state/x86_64/*.env)
+                file=${src##*/}
+                cp "$TEST_STATE_DIR/$file" "$dest"
+                ;;
+            *)
+                exit 2
+                ;;
+        esac
+        ;;
+    s3api:head-object)
+        shift 2
+        key=''
+        while [ "$#" -gt 0 ]; do
+            case $1 in
+                --endpoint-url|--bucket)
+                    shift 2
+                    ;;
+                --key)
+                    key=$2
+                    shift 2
+                    ;;
+                *)
+                    exit 2
+                    ;;
+            esac
+        done
+        [ -n "$key" ] || exit 2
+        [ -f "${TEST_OBJECT_DIR:-/nonexistent}/$key" ] || exit 1
         ;;
     *)
         exit 2
@@ -64,8 +89,9 @@ EOF
 source_repo="$tmp_dir/regular-source"
 packages_dir="$tmp_dir/packages"
 state_dir="$tmp_dir/state"
+object_dir="$tmp_dir/objects"
 bin_dir="$tmp_dir/bin"
-mkdir -p "$source_repo" "$packages_dir" "$state_dir"
+mkdir -p "$source_repo" "$packages_dir" "$state_dir" "$object_dir/$PKG_PREFIX"
 
 (
     cd "$source_repo"
@@ -111,6 +137,9 @@ VCS_FINGERPRINT=''
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
 
+: >"$object_dir/$PKG_PREFIX/demo-regular-1-1-any.pkg.tar.zst"
+: >"$object_dir/$PKG_PREFIX/demo-regular-1-1-any.pkg.tar.zst.sig"
+
 write_fake_aws "$bin_dir"
 
 common_env() {
@@ -119,6 +148,7 @@ common_env() {
     S3_ENDPOINT=https://example.invalid \
     S3_REGION=auto \
     TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
     "$@"
@@ -132,6 +162,38 @@ git_commit "$source_repo" two
 
 changed=$(common_env sh "$ROOT_DIR/scripts/check-updates.sh" regular)
 [ "$changed" = 'demo-regular' ] || die "regular package was not queued after source ref changed: $changed"
+
+new_commit=$(cd "$source_repo" && git rev-parse HEAD)
+cat >"$state_dir/demo-regular.env" <<EOF
+STATE_VERSION=2
+NAME='demo-regular'
+SOURCE_GIT='$source_repo'
+SOURCE_REF='$source_ref'
+LAST_SOURCE_COMMIT='$new_commit'
+PKGNAMES='demo-regular'
+PKGFILES='demo-regular-1-1-any.pkg.tar.zst'
+VCS_FINGERPRINT=''
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+rm -f "$object_dir/$PKG_PREFIX/demo-regular-1-1-any.pkg.tar.zst.sig"
+
+missing_artifact=$(common_env sh "$ROOT_DIR/scripts/check-updates.sh" regular)
+[ "$missing_artifact" = 'demo-regular' ] || die "regular package was not queued after state package files went missing: $missing_artifact"
+
+: >"$object_dir/$PKG_PREFIX/demo-regular-1-1-any.pkg.tar.zst.sig"
+
+cat >"$state_dir/demo-regular.env" <<EOF
+STATE_VERSION=2
+NAME='demo-regular'
+SOURCE_GIT='$source_repo'
+SOURCE_REF='$source_ref'
+LAST_SOURCE_COMMIT='$old_commit'
+PKGNAMES='demo-regular'
+PKGFILES='demo-regular-1-1-any.pkg.tar.zst'
+VCS_FINGERPRINT=''
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
 
 github_output="$tmp_dir/github-output"
 queue_stderr="$tmp_dir/queue.stderr"
