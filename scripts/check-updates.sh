@@ -57,6 +57,28 @@ log_file_tail() {
     tail -n 50 "$file" >&2
 }
 
+normalize_vcs_fingerprint() {
+    fingerprint=$1
+
+    printf '%s\n' "$fingerprint" | awk '
+        {
+            i = 1
+            while (i <= NF) {
+                rel = $i
+                kind = $(i + 1)
+                if (kind == "HEAD" && i + 2 <= NF) {
+                    print rel " HEAD " $(i + 2)
+                    i += 3
+                } else if (kind == "ref" && i + 3 <= NF) {
+                    i += 4
+                } else {
+                    i++
+                }
+            }
+        }
+    ' | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+}
+
 check_regular_package() {
     manifest_source_git=$SOURCE_GIT
     manifest_source_ref=$SOURCE_REF
@@ -127,22 +149,35 @@ check_vcs_package() {
     vcs_fingerprint_file="$probe_dir/vcs_fingerprint.txt"
     [ -f "$vcs_fingerprint_file" ] || die "probe did not produce vcs_fingerprint.txt for $NAME"
 
-    current_vcs_fingerprint=$(awk 'NF { print; exit }' "$vcs_fingerprint_file")
-    if [ -z "$current_vcs_fingerprint" ]; then
-        log "$NAME: empty VCS fingerprint, queued"
-        queue_package "$NAME"
-        return 0
-    fi
-
-    if [ "$current_vcs_fingerprint" != "$OLD_VCS_FINGERPRINT" ]; then
-        log "$NAME: VCS fingerprint changed, queued"
-        queue_package "$NAME"
-        return 0
-    fi
-
     current_predicted_pkgfiles=$(awk 'NF { print; exit }' "$predicted_pkgfiles_file")
     if [ "$current_predicted_pkgfiles" != "$OLD_PKGFILES" ]; then
         log "$NAME: predicted pkgfiles changed, queued"
+        queue_package "$NAME"
+        return 0
+    fi
+
+    current_vcs_fingerprint=$(normalize_vcs_fingerprint "$(awk 'NF { print; exit }' "$vcs_fingerprint_file")")
+    old_vcs_fingerprint=$(normalize_vcs_fingerprint "$OLD_VCS_FINGERPRINT")
+
+    if [ -z "$current_vcs_fingerprint" ]; then
+        if [ -z "$old_vcs_fingerprint" ]; then
+            log "$NAME: empty VCS fingerprint and pkgfiles unchanged, skipped"
+            skip_package
+            return 0
+        fi
+        log "$NAME: VCS fingerprint disappeared, queued"
+        queue_package "$NAME"
+        return 0
+    fi
+
+    if [ -z "$old_vcs_fingerprint" ]; then
+        log "$NAME: missing previous VCS fingerprint, queued"
+        queue_package "$NAME"
+        return 0
+    fi
+
+    if [ "$current_vcs_fingerprint" != "$old_vcs_fingerprint" ]; then
+        log "$NAME: VCS fingerprint changed, queued"
         queue_package "$NAME"
         return 0
     fi

@@ -143,12 +143,6 @@ append_git_repo_fingerprint() {
 
     fingerprint_commit=$(git -C "$fingerprint_repo_dir" rev-parse --verify HEAD 2>/dev/null) || return 0
     printf '%s HEAD %s\n' "$fingerprint_rel" "$fingerprint_commit" >>"$fingerprint_output_file"
-
-    git -C "$fingerprint_repo_dir" for-each-ref --format='%(refname) %(objectname)' refs/heads refs/remotes refs/tags 2>/dev/null \
-        | while IFS= read -r fingerprint_ref_line; do
-            [ -n "$fingerprint_ref_line" ] || continue
-            printf '%s ref %s\n' "$fingerprint_rel" "$fingerprint_ref_line"
-        done >>"$fingerprint_output_file"
 }
 
 write_vcs_fingerprint_root() {
@@ -165,20 +159,6 @@ write_vcs_fingerprint_root() {
         append_git_repo_fingerprint "$fingerprint_root" "$fingerprint_repo_dir" "$fingerprint_root_tmp_file"
     done
 
-    find "$fingerprint_root" -type d \( -name '*.git' -o -path '*/.git/modules/*' \) -print \
-        | while IFS= read -r fingerprint_bare_repo_dir; do
-            [ "$(git -C "$fingerprint_bare_repo_dir" rev-parse --is-bare-repository 2>/dev/null || :)" = 'true' ] || continue
-            append_git_repo_fingerprint "$fingerprint_root" "$fingerprint_bare_repo_dir" "$fingerprint_root_tmp_file"
-        done
-
-    find "$fingerprint_root" -type d -print | while IFS= read -r fingerprint_cache_repo_dir; do
-        [ -d "$fingerprint_cache_repo_dir/objects" ] || continue
-        [ -d "$fingerprint_cache_repo_dir/refs" ] || continue
-        [ -f "$fingerprint_cache_repo_dir/config" ] || continue
-        [ "$(git -C "$fingerprint_cache_repo_dir" rev-parse --is-bare-repository 2>/dev/null || :)" = 'true' ] || continue
-        append_git_repo_fingerprint "$fingerprint_root" "$fingerprint_cache_repo_dir" "$fingerprint_root_tmp_file"
-    done
-
     LC_ALL=C sort -u "$fingerprint_root_tmp_file" >>"$fingerprint_root_output_file"
     rm -f "$fingerprint_root_tmp_file"
 }
@@ -189,7 +169,6 @@ write_vcs_fingerprint() {
     fingerprint_tmp_file=$(mktemp)
     : >"$fingerprint_tmp_file"
     write_vcs_fingerprint_root "$BUILD_DIR/src" "$fingerprint_tmp_file"
-    write_vcs_fingerprint_root "$SRCDEST" "$fingerprint_tmp_file"
     LC_ALL=C sort -u "$fingerprint_tmp_file" | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$fingerprint_output_file"
     rm -f "$fingerprint_tmp_file"
 }

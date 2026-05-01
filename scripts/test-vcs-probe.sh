@@ -244,6 +244,41 @@ unchanged=$(
 )
 [ -z "$unchanged" ] || die "VCS package was queued without source, fingerprint, or pkgfile changes: $unchanged"
 
+noisy_fingerprint="$new_fingerprint local-vcs-git ref refs/remotes/origin/main 0000000000000000000000000000000000000000 local-vcs-git ref refs/tags/noise 1111111111111111111111111111111111111111"
+cat >"$state_dir/local-vcs-git.env" <<EOF
+STATE_VERSION=2
+NAME='local-vcs-git'
+SOURCE_GIT='$pkgbuild_repo'
+SOURCE_REF='$pkgbuild_ref'
+LAST_SOURCE_COMMIT='$pkgbuild_commit'
+PKGNAMES='local-vcs-git'
+PKGFILES='$new_pkgfiles'
+VCS_FINGERPRINT='$noisy_fingerprint'
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+legacy_unchanged=$(
+    TEST_STATE_DIR=$state_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs
+)
+[ -z "$legacy_unchanged" ] || die "VCS package was queued for legacy noisy refs: $legacy_unchanged"
+
+(
+    cd "$upstream_repo"
+    git branch probe-noise HEAD
+    git -c tag.gpgsign=false tag --no-sign probe-noise-tag HEAD
+)
+
+ref_noise_unchanged=$(
+    TEST_STATE_DIR=$state_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs
+)
+[ -z "$ref_noise_unchanged" ] || die "VCS package was queued for upstream ref-only changes: $ref_noise_unchanged"
+
 plain_pkgbuild_repo="$tmp_dir/plain-pkgbuild-repo"
 mkdir -p "$plain_pkgbuild_repo"
 cat >"$plain_pkgbuild_repo/PKGBUILD" <<'EOF'
@@ -313,12 +348,14 @@ VCS_FINGERPRINT=''
 BUILT_AT='2026-01-01T00:00:00Z'
 EOF
 
-queued=$(
+plain_empty_stderr="$tmp_dir/plain-empty.stderr"
+empty_unchanged=$(
     TEST_STATE_DIR=$state_dir \
     PACKAGES_DIR=$packages_dir \
     PATH=$bin_dir:$PATH \
-    sh "$SCRIPT_DIR/check-updates.sh" vcs
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$plain_empty_stderr"
 )
-[ "$queued" = 'plain-vcs-git' ] || die "VCS package with empty fingerprint was not queued: $queued"
+[ -z "$empty_unchanged" ] || die "VCS package with empty fingerprint and unchanged pkgfiles was queued: $empty_unchanged"
+grep -F -x 'plain-vcs-git: empty VCS fingerprint and pkgfiles unchanged, skipped' "$plain_empty_stderr" >/dev/null
 
 printf '%s\n' 'vcs probe regression checks passed'
