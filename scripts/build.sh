@@ -186,32 +186,32 @@ write_vcs_fingerprint_makepkg_builddir() {
 }
 
 write_vcs_fingerprint_details() {
-    fingerprint_output_file=$1
+    fingerprint_details_output_file=$1
 
-    fingerprint_tmp_file=$(mktemp)
-    : >"$fingerprint_tmp_file"
-    write_vcs_fingerprint_root "$BUILD_DIR/src" "$fingerprint_tmp_file"
+    fingerprint_details_tmp_file=$(mktemp)
+    : >"$fingerprint_details_tmp_file"
+    write_vcs_fingerprint_root "$BUILD_DIR/src" "$fingerprint_details_tmp_file"
     if [ -n "${MAKEPKG_BUILDDIR-}" ]; then
-        write_vcs_fingerprint_makepkg_builddir "$MAKEPKG_BUILDDIR" "$fingerprint_tmp_file"
+        write_vcs_fingerprint_makepkg_builddir "$MAKEPKG_BUILDDIR" "$fingerprint_details_tmp_file"
     fi
     if [ -n "${BUILDDIR-}" ] && [ "$BUILDDIR" != "${MAKEPKG_BUILDDIR-}" ]; then
-        write_vcs_fingerprint_makepkg_builddir "$BUILDDIR" "$fingerprint_tmp_file"
+        write_vcs_fingerprint_makepkg_builddir "$BUILDDIR" "$fingerprint_details_tmp_file"
     fi
-    LC_ALL=C sort -u "$fingerprint_tmp_file" >"$fingerprint_output_file"
-    rm -f "$fingerprint_tmp_file"
+    LC_ALL=C sort -u "$fingerprint_details_tmp_file" >"$fingerprint_details_output_file"
+    rm -f "$fingerprint_details_tmp_file"
 }
 
 write_vcs_fingerprint() {
-    fingerprint_output_file=$1
+    fingerprint_hash_output_file=$1
 
-    fingerprint_detail_file=$(mktemp)
-    write_vcs_fingerprint_details "$fingerprint_detail_file"
-    if [ -s "$fingerprint_detail_file" ]; then
-        file_sha256 "$fingerprint_detail_file" >"$fingerprint_output_file"
+    fingerprint_hash_detail_file=$(mktemp)
+    write_vcs_fingerprint_details "$fingerprint_hash_detail_file"
+    if [ -s "$fingerprint_hash_detail_file" ]; then
+        file_sha256 "$fingerprint_hash_detail_file" >"$fingerprint_hash_output_file"
     else
-        : >"$fingerprint_output_file"
+        : >"$fingerprint_hash_output_file"
     fi
-    rm -f "$fingerprint_detail_file"
+    rm -f "$fingerprint_hash_detail_file"
 }
 
 write_recipe_fingerprint() {

@@ -50,6 +50,7 @@ jobs:
           sh scripts/test-ci-plan-failures.sh
           sh scripts/test-cleanup-build-context.sh
           sh scripts/test-repo-helpers.sh
+          sh scripts/test-collect-artifacts.sh
           sh scripts/test-run-probe-user.sh
           sh scripts/test-check-updates.sh
 
