@@ -22,9 +22,6 @@ mkdir -p "$states_dir" "$repo_dir" "$packages_dir"
 aws_s3_cp --recursive "s3://$S3_BUCKET/$STATE_PREFIX/" "$states_dir/" >/dev/null 2>&1 || :
 
 db_archive=$(repo_db_archive_name)
-files_archive=$(repo_files_archive_name)
-db_name=$(repo_db_name)
-files_name=$(repo_files_name)
 
 good_packages=''
 
@@ -33,21 +30,11 @@ for state_file in "$states_dir"/*.env; do
     state_load "$state_file"
 
     missing=0
-    for pkgfile in $PKGFILES; do
-        if ! s3_object_exists "$PKG_PREFIX/$pkgfile" || ! s3_object_exists "$PKG_PREFIX/$pkgfile.sig"; then
-            missing=1
-            break
-        fi
-    done
+    repo_pkgfiles_exist "$PKGFILES" || missing=1
 
     if [ "$missing" = "1" ]; then
         for pkgfile in $PKGFILES; do
-            if s3_object_exists "$PKG_PREFIX/$pkgfile"; then
-                aws_s3_rm "$(repo_s3_uri "$pkgfile")"
-            fi
-            if s3_object_exists "$PKG_PREFIX/$pkgfile.sig"; then
-                aws_s3_rm "$(repo_s3_uri "$pkgfile.sig")"
-            fi
+            repo_delete_pkgfile_pair "$pkgfile"
         done
         state_delete_remote "$NAME"
         continue
@@ -64,14 +51,7 @@ done
 if [ -n "$good_packages" ]; then
     run_in_arch_tools --repo-mount "$repo_dir" --extra-mount "$packages_dir" "repo-add \"$db_archive\"$good_packages"
     materialize_repo_links "$repo_dir"
-    aws_s3_cp "$repo_dir/$db_archive" "$(repo_s3_uri "$db_archive")"
-    aws_s3_cp "$repo_dir/$db_name" "$(repo_s3_uri "$db_name")"
-    aws_s3_cp "$repo_dir/$files_archive" "$(repo_s3_uri "$files_archive")"
-    aws_s3_cp "$repo_dir/$files_name" "$(repo_s3_uri "$files_name")"
+    repo_upload_databases "$repo_dir"
 else
-    for object_name in "$db_archive" "$db_name" "$files_archive" "$files_name"; do
-        if s3_object_exists "$PKG_PREFIX/$object_name"; then
-            aws_s3_rm "$(repo_s3_uri "$object_name")"
-        fi
-    done
+    repo_delete_databases_if_present
 fi

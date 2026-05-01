@@ -79,27 +79,6 @@ normalize_vcs_fingerprint() {
     ' | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//'
 }
 
-state_pkgfiles_exist() {
-    state_pkgfiles=$1
-
-    for state_pkgfile in $state_pkgfiles; do
-        if ! s3_object_exists "$PKG_PREFIX/$state_pkgfile"; then
-            return 1
-        fi
-        if ! s3_object_exists "$PKG_PREFIX/$state_pkgfile.sig"; then
-            return 1
-        fi
-    done
-
-    return 0
-}
-
-predicted_pkgfiles_exist() {
-    predicted_pkgfiles=$1
-
-    state_pkgfiles_exist "$predicted_pkgfiles"
-}
-
 check_regular_package() {
     manifest_source_git=$SOURCE_GIT
     manifest_source_ref=$SOURCE_REF
@@ -113,7 +92,7 @@ check_regular_package() {
     fi
 
     eval "$(state_emit_prefixed OLD "$state_file")"
-    if ! state_pkgfiles_exist "$OLD_PKGFILES"; then
+    if ! repo_pkgfiles_exist "$OLD_PKGFILES"; then
         log "$NAME: state package files missing, queued"
         queue_package "$NAME"
         return 0
@@ -147,7 +126,7 @@ check_vcs_package() {
     remote_line=$(git ls-remote "$SOURCE_GIT" "$SOURCE_REF" | awk 'NR==1{print $1}')
     [ -n "$remote_line" ] || die "failed to resolve remote ref for $NAME"
 
-    if ! state_pkgfiles_exist "$OLD_PKGFILES"; then
+    if ! repo_pkgfiles_exist "$OLD_PKGFILES"; then
         log "$NAME: state package files missing, queued"
         queue_package "$NAME"
         return 0
@@ -211,7 +190,7 @@ check_vcs_package() {
     if [ -z "$current_vcs_fingerprint" ]; then
         if [ -z "$old_vcs_fingerprint" ]; then
             if [ "$predicted_pkgfiles_changed" -eq 1 ]; then
-                if predicted_pkgfiles_exist "$current_predicted_pkgfiles"; then
+                if repo_pkgfiles_exist "$current_predicted_pkgfiles"; then
                     log "$NAME: predicted pkgfiles changed but existing package files are already present, skipped"
                 else
                     log "$NAME: predicted pkgfiles changed and package files are missing, queued"
@@ -231,7 +210,7 @@ check_vcs_package() {
 
     if [ -z "$old_vcs_fingerprint" ]; then
         if [ "$predicted_pkgfiles_changed" -eq 1 ]; then
-            if predicted_pkgfiles_exist "$current_predicted_pkgfiles"; then
+            if repo_pkgfiles_exist "$current_predicted_pkgfiles"; then
                 log "$NAME: missing previous VCS fingerprint but predicted pkgfiles already exist, skipped"
                 skip_package
             else
@@ -252,7 +231,7 @@ check_vcs_package() {
     fi
 
     if [ "$predicted_pkgfiles_changed" -eq 1 ]; then
-        if predicted_pkgfiles_exist "$current_predicted_pkgfiles"; then
+        if repo_pkgfiles_exist "$current_predicted_pkgfiles"; then
             log "$NAME: predicted pkgfiles changed but existing package files are already present, skipped"
         else
             log "$NAME: predicted pkgfiles changed and package files are missing, queued"

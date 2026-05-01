@@ -194,6 +194,78 @@ materialize_repo_links() {
     fi
 }
 
+repo_download_existing_databases() {
+    repo_dir=$1
+    db_archive=$(repo_db_archive_name)
+    files_archive=$(repo_files_archive_name)
+
+    if s3_object_exists "$PKG_PREFIX/$db_archive"; then
+        aws_s3_cp "$(repo_s3_uri "$db_archive")" "$repo_dir/$db_archive"
+    fi
+    if s3_object_exists "$PKG_PREFIX/$files_archive"; then
+        aws_s3_cp "$(repo_s3_uri "$files_archive")" "$repo_dir/$files_archive"
+    fi
+}
+
+repo_upload_databases() {
+    repo_dir=$1
+    db_archive=$(repo_db_archive_name)
+    files_archive=$(repo_files_archive_name)
+    db_name=$(repo_db_name)
+    files_name=$(repo_files_name)
+
+    [ -f "$repo_dir/$db_archive" ] || die "missing repo database: $repo_dir/$db_archive"
+    [ -f "$repo_dir/$db_name" ] || die "missing repo database link: $repo_dir/$db_name"
+    [ -f "$repo_dir/$files_archive" ] || die "missing repo files database: $repo_dir/$files_archive"
+    [ -f "$repo_dir/$files_name" ] || die "missing repo files database link: $repo_dir/$files_name"
+
+    aws_s3_cp "$repo_dir/$db_archive" "$(repo_s3_uri "$db_archive")"
+    aws_s3_cp "$repo_dir/$db_name" "$(repo_s3_uri "$db_name")"
+    aws_s3_cp "$repo_dir/$files_archive" "$(repo_s3_uri "$files_archive")"
+    aws_s3_cp "$repo_dir/$files_name" "$(repo_s3_uri "$files_name")"
+}
+
+repo_delete_databases_if_present() {
+    db_archive=$(repo_db_archive_name)
+    files_archive=$(repo_files_archive_name)
+    db_name=$(repo_db_name)
+    files_name=$(repo_files_name)
+
+    for object_name in "$db_archive" "$db_name" "$files_archive" "$files_name"; do
+        if s3_object_exists "$PKG_PREFIX/$object_name"; then
+            aws_s3_rm "$(repo_s3_uri "$object_name")"
+        fi
+    done
+}
+
+repo_pkgfile_pair_exists() {
+    pkgfile=$1
+
+    s3_object_exists "$PKG_PREFIX/$pkgfile" &&
+        s3_object_exists "$PKG_PREFIX/$pkgfile.sig"
+}
+
+repo_pkgfiles_exist() {
+    pkgfiles=$1
+
+    for pkgfile in $pkgfiles; do
+        repo_pkgfile_pair_exists "$pkgfile" || return 1
+    done
+
+    return 0
+}
+
+repo_delete_pkgfile_pair() {
+    pkgfile=$1
+
+    if s3_object_exists "$PKG_PREFIX/$pkgfile"; then
+        aws_s3_rm "$(repo_s3_uri "$pkgfile")"
+    fi
+    if s3_object_exists "$PKG_PREFIX/$pkgfile.sig"; then
+        aws_s3_rm "$(repo_s3_uri "$pkgfile.sig")"
+    fi
+}
+
 trim_package_basename() {
     basename "$1" .sh
 }
