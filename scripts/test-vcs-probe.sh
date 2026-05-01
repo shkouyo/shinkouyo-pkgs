@@ -67,22 +67,47 @@ write_fake_aws() {
 
 set -eu
 
-[ "$#" -ge 6 ] || exit 2
-[ "$1" = "s3" ] || exit 2
-[ "$2" = "cp" ] || exit 2
-shift 2
+case "${1-}:${2-}" in
+    s3:cp)
+        [ "$#" -ge 6 ] || exit 2
+        shift 2
 
-if [ "${1-}" = "--endpoint-url" ]; then
-    shift 2
-fi
+        if [ "${1-}" = "--endpoint-url" ]; then
+            shift 2
+        fi
 
-src=$1
-dest=$2
+        src=$1
+        dest=$2
 
-case $src in
-    s3://*/.state/x86_64/*.env)
-        file=${src##*/}
-        cp "$TEST_STATE_DIR/$file" "$dest"
+        case $src in
+            s3://*/.state/x86_64/*.env)
+                file=${src##*/}
+                cp "$TEST_STATE_DIR/$file" "$dest"
+                ;;
+            *)
+                exit 2
+                ;;
+        esac
+        ;;
+    s3api:head-object)
+        shift 2
+        key=''
+        while [ "$#" -gt 0 ]; do
+            case $1 in
+                --endpoint-url|--bucket)
+                    shift 2
+                    ;;
+                --key)
+                    key=$2
+                    shift 2
+                    ;;
+                *)
+                    exit 2
+                    ;;
+            esac
+        done
+        [ -n "$key" ] || exit 2
+        [ -f "${TEST_OBJECT_DIR:-/nonexistent}/$key" ] || exit 1
         ;;
     *)
         exit 2
@@ -96,8 +121,9 @@ upstream_repo="$tmp_dir/upstream"
 pkgbuild_repo="$tmp_dir/pkgbuild-repo"
 packages_dir="$tmp_dir/packages"
 state_dir="$tmp_dir/state"
+object_dir="$tmp_dir/objects"
 bin_dir="$tmp_dir/bin"
-mkdir -p "$upstream_repo" "$pkgbuild_repo" "$packages_dir" "$state_dir"
+mkdir -p "$upstream_repo" "$pkgbuild_repo" "$packages_dir" "$state_dir" "$object_dir"
 
 (
     cd "$upstream_repo"
@@ -181,6 +207,7 @@ assert_contains_pkgfile "$new_pkgfiles" "$new_expected_pkgfile"
 [ "$new_pkgfiles" != "$old_pkgfiles" ] || die "VCS probe did not change after upstream advanced"
 [ -n "$new_fingerprint" ] || die "new VCS fingerprint was empty"
 [ "$new_fingerprint" != "$old_fingerprint" ] || die "VCS fingerprint did not change after upstream advanced"
+[ -d "$probe_dir/makepkg-builddir/local-vcs-git/src/local-vcs-git/.git" ] || die "probe did not use context makepkg BUILDDIR"
 
 write_fake_aws "$bin_dir"
 
@@ -227,6 +254,23 @@ missing_fingerprint_changed=$(
 )
 [ "$missing_fingerprint_changed" = 'local-vcs-git' ] || die "VCS package was not queued with missing fingerprint and changed pkgfiles: $missing_fingerprint_changed"
 grep -F -x 'local-vcs-git: missing previous VCS fingerprint and predicted pkgfiles changed, queued' "$missing_fingerprint_changed_stderr" >/dev/null
+
+mkdir -p "$object_dir/$PKG_PREFIX"
+for new_pkgfile in $new_pkgfiles; do
+    : >"$object_dir/$PKG_PREFIX/$new_pkgfile"
+    : >"$object_dir/$PKG_PREFIX/$new_pkgfile.sig"
+done
+
+missing_fingerprint_existing_stderr="$tmp_dir/missing-fingerprint-existing.stderr"
+missing_fingerprint_existing=$(
+    TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$missing_fingerprint_existing_stderr"
+)
+[ -z "$missing_fingerprint_existing" ] || die "VCS package was queued with missing fingerprint but existing predicted pkgfiles: $missing_fingerprint_existing"
+grep -F -x 'local-vcs-git: missing previous VCS fingerprint but predicted pkgfiles already exist, skipped' "$missing_fingerprint_existing_stderr" >/dev/null
 
 cat >"$state_dir/local-vcs-git.env" <<EOF
 STATE_VERSION=2

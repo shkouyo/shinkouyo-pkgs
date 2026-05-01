@@ -47,8 +47,9 @@ prepare_context() {
     source_dir="$context_dir/source"
     pkgdest_dir="$context_dir/pkgdest"
     srcdest_dir="$context_dir/srcdest"
-    rm -rf "$source_dir"
-    mkdir -p "$pkgdest_dir" "$srcdest_dir"
+    makepkg_builddir="$context_dir/makepkg-builddir"
+    rm -rf "$source_dir" "$makepkg_builddir"
+    mkdir -p "$pkgdest_dir" "$srcdest_dir" "$makepkg_builddir"
     git clone --filter=blob:none "$SOURCE_GIT" "$source_dir"
     (
         cd "$source_dir"
@@ -73,10 +74,12 @@ prepare_context() {
     chmod -R a+rwX "$source_dir"
     chmod -R a+rwX "$pkgdest_dir"
     chmod -R a+rwX "$srcdest_dir"
+    chmod -R a+rwX "$makepkg_builddir"
 
     manifest_write_github_env "$context_dir/github.env"
     printf 'PKGDEST=%s\n' "$pkgdest_dir" >>"$context_dir/github.env"
     printf 'SRCDEST=%s\n' "$srcdest_dir" >>"$context_dir/github.env"
+    printf 'BUILDDIR=%s\n' "$makepkg_builddir" >>"$context_dir/github.env"
     printf 'PACKAGER=%s\n' "$PACKAGER" >>"$context_dir/github.env"
 
     {
@@ -86,6 +89,7 @@ prepare_context() {
         printf 'SOURCE_REF=%s\n' "$(shell_quote "$SOURCE_REF")"
         printf 'SOURCE_DIR=%s\n' "$(shell_quote "$source_dir")"
         printf 'BUILD_DIR=%s\n' "$(shell_quote "$build_dir")"
+        printf 'MAKEPKG_BUILDDIR=%s\n' "$(shell_quote "$makepkg_builddir")"
         printf 'PKGDEST=%s\n' "$(shell_quote "$pkgdest_dir")"
         printf 'SRCDEST=%s\n' "$(shell_quote "$srcdest_dir")"
         printf 'PACKAGER=%s\n' "$(shell_quote "$PACKAGER")"
@@ -100,13 +104,15 @@ prepare() {
 
 run_probe_nobuild() {
     build_env
-    export PKGDEST SRCDEST PACKAGER
+    BUILDDIR=${BUILDDIR:-${MAKEPKG_BUILDDIR-}}
+    export PKGDEST SRCDEST PACKAGER BUILDDIR
     makepkg --nobuild --nodeps --skipinteg --nosign -p "$BUILD_PKGBUILD" >/dev/null
 }
 
 run_probe_packagelist() {
     build_env
-    export PKGDEST SRCDEST PACKAGER
+    BUILDDIR=${BUILDDIR:-${MAKEPKG_BUILDDIR-}}
+    export PKGDEST SRCDEST PACKAGER BUILDDIR
     makepkg --packagelist --nodeps --skipinteg --holdver --nosign -p "$BUILD_PKGBUILD"
 }
 
@@ -163,12 +169,30 @@ write_vcs_fingerprint_root() {
     rm -f "$fingerprint_root_tmp_file"
 }
 
+write_vcs_fingerprint_makepkg_builddir() {
+    fingerprint_makepkg_builddir=$1
+    fingerprint_makepkg_output_file=$2
+
+    [ -d "$fingerprint_makepkg_builddir" ] || return 0
+
+    for fingerprint_package_dir in "$fingerprint_makepkg_builddir"/*; do
+        [ -d "$fingerprint_package_dir/src" ] || continue
+        write_vcs_fingerprint_root "$fingerprint_package_dir/src" "$fingerprint_makepkg_output_file"
+    done
+}
+
 write_vcs_fingerprint() {
     fingerprint_output_file=$1
 
     fingerprint_tmp_file=$(mktemp)
     : >"$fingerprint_tmp_file"
     write_vcs_fingerprint_root "$BUILD_DIR/src" "$fingerprint_tmp_file"
+    if [ -n "${MAKEPKG_BUILDDIR-}" ]; then
+        write_vcs_fingerprint_makepkg_builddir "$MAKEPKG_BUILDDIR" "$fingerprint_tmp_file"
+    fi
+    if [ -n "${BUILDDIR-}" ] && [ "$BUILDDIR" != "${MAKEPKG_BUILDDIR-}" ]; then
+        write_vcs_fingerprint_makepkg_builddir "$BUILDDIR" "$fingerprint_tmp_file"
+    fi
     LC_ALL=C sort -u "$fingerprint_tmp_file" | tr '\n' ' ' | sed 's/[[:space:]]*$//' >"$fingerprint_output_file"
     rm -f "$fingerprint_tmp_file"
 }

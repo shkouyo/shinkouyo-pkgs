@@ -79,6 +79,21 @@ normalize_vcs_fingerprint() {
     ' | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//'
 }
 
+predicted_pkgfiles_exist() {
+    predicted_pkgfiles=$1
+
+    for predicted_pkgfile in $predicted_pkgfiles; do
+        if ! s3_object_exists "$PKG_PREFIX/$predicted_pkgfile"; then
+            return 1
+        fi
+        if ! s3_object_exists "$PKG_PREFIX/$predicted_pkgfile.sig"; then
+            return 1
+        fi
+    done
+
+    return 0
+}
+
 check_regular_package() {
     manifest_source_git=$SOURCE_GIT
     manifest_source_ref=$SOURCE_REF
@@ -176,8 +191,13 @@ check_vcs_package() {
 
     if [ -z "$old_vcs_fingerprint" ]; then
         if [ "$predicted_pkgfiles_changed" -eq 1 ]; then
-            log "$NAME: missing previous VCS fingerprint and predicted pkgfiles changed, queued"
-            queue_package "$NAME"
+            if predicted_pkgfiles_exist "$current_predicted_pkgfiles"; then
+                log "$NAME: missing previous VCS fingerprint but predicted pkgfiles already exist, skipped"
+                skip_package
+            else
+                log "$NAME: missing previous VCS fingerprint and predicted pkgfiles changed, queued"
+                queue_package "$NAME"
+            fi
         else
             log "$NAME: missing previous VCS fingerprint but predicted pkgfiles unchanged, skipped"
             skip_package
