@@ -175,8 +175,13 @@ check_vcs_package() {
     fi
 
     if [ -z "$old_vcs_fingerprint" ]; then
-        log "$NAME: missing previous VCS fingerprint, queued"
-        queue_package "$NAME"
+        if [ "$predicted_pkgfiles_changed" -eq 1 ]; then
+            log "$NAME: missing previous VCS fingerprint and predicted pkgfiles changed, queued"
+            queue_package "$NAME"
+        else
+            log "$NAME: missing previous VCS fingerprint but predicted pkgfiles unchanged, skipped"
+            skip_package
+        fi
         return 0
     fi
 

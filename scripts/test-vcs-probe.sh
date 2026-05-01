@@ -191,6 +191,50 @@ SOURCE_GIT='$pkgbuild_repo'
 SOURCE_REF='$pkgbuild_ref'
 LAST_SOURCE_COMMIT='$pkgbuild_commit'
 PKGNAMES='local-vcs-git'
+PKGFILES='$new_pkgfiles'
+VCS_FINGERPRINT=''
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+missing_fingerprint_unchanged_stderr="$tmp_dir/missing-fingerprint-unchanged.stderr"
+missing_fingerprint_unchanged=$(
+    TEST_STATE_DIR=$state_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$missing_fingerprint_unchanged_stderr"
+)
+[ -z "$missing_fingerprint_unchanged" ] || die "VCS package was queued with missing fingerprint but unchanged pkgfiles: $missing_fingerprint_unchanged"
+grep -F -x 'local-vcs-git: missing previous VCS fingerprint but predicted pkgfiles unchanged, skipped' "$missing_fingerprint_unchanged_stderr" >/dev/null
+
+cat >"$state_dir/local-vcs-git.env" <<EOF
+STATE_VERSION=2
+NAME='local-vcs-git'
+SOURCE_GIT='$pkgbuild_repo'
+SOURCE_REF='$pkgbuild_ref'
+LAST_SOURCE_COMMIT='$pkgbuild_commit'
+PKGNAMES='local-vcs-git'
+PKGFILES='$old_pkgfiles'
+VCS_FINGERPRINT=''
+BUILT_AT='2026-01-01T00:00:00Z'
+EOF
+
+missing_fingerprint_changed_stderr="$tmp_dir/missing-fingerprint-changed.stderr"
+missing_fingerprint_changed=$(
+    TEST_STATE_DIR=$state_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$missing_fingerprint_changed_stderr"
+)
+[ "$missing_fingerprint_changed" = 'local-vcs-git' ] || die "VCS package was not queued with missing fingerprint and changed pkgfiles: $missing_fingerprint_changed"
+grep -F -x 'local-vcs-git: missing previous VCS fingerprint and predicted pkgfiles changed, queued' "$missing_fingerprint_changed_stderr" >/dev/null
+
+cat >"$state_dir/local-vcs-git.env" <<EOF
+STATE_VERSION=2
+NAME='local-vcs-git'
+SOURCE_GIT='$pkgbuild_repo'
+SOURCE_REF='$pkgbuild_ref'
+LAST_SOURCE_COMMIT='$pkgbuild_commit'
+PKGNAMES='local-vcs-git'
 PKGFILES='$old_pkgfiles'
 VCS_FINGERPRINT='$new_fingerprint'
 BUILT_AT='2026-01-01T00:00:00Z'
