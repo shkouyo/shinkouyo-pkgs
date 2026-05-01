@@ -251,8 +251,8 @@ missing_fingerprint_unchanged=$(
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$missing_fingerprint_unchanged_stderr"
 )
-[ "$missing_fingerprint_unchanged" = 'local-vcs-git' ] || die "VCS package was not queued with missing fingerprint: $missing_fingerprint_unchanged"
-grep -F -x 'local-vcs-git: missing previous VCS fingerprint, queued' "$missing_fingerprint_unchanged_stderr" >/dev/null
+[ -z "$missing_fingerprint_unchanged" ] || die "VCS package was queued with missing fingerprint but unchanged pkgfiles: $missing_fingerprint_unchanged"
+grep -F -x 'local-vcs-git: missing previous VCS fingerprint but predicted pkgfiles already exist, skipped' "$missing_fingerprint_unchanged_stderr" >/dev/null
 
 cat >"$state_dir/local-vcs-git.env" <<EOF
 STATE_VERSION=2
@@ -279,7 +279,7 @@ missing_fingerprint_changed=$(
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$missing_fingerprint_changed_stderr"
 )
 [ "$missing_fingerprint_changed" = 'local-vcs-git' ] || die "VCS package was not queued with missing fingerprint and changed pkgfiles: $missing_fingerprint_changed"
-grep -F -x 'local-vcs-git: missing previous VCS fingerprint, queued' "$missing_fingerprint_changed_stderr" >/dev/null
+grep -F -x 'local-vcs-git: missing previous VCS fingerprint and predicted package files are missing, queued' "$missing_fingerprint_changed_stderr" >/dev/null
 
 for new_pkgfile in $new_pkgfiles; do
     : >"$object_dir/$PKG_PREFIX/$new_pkgfile"
@@ -294,8 +294,8 @@ missing_fingerprint_existing=$(
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$missing_fingerprint_existing_stderr"
 )
-[ "$missing_fingerprint_existing" = 'local-vcs-git' ] || die "VCS package was not queued with missing fingerprint and existing predicted pkgfiles: $missing_fingerprint_existing"
-grep -F -x 'local-vcs-git: missing previous VCS fingerprint, queued' "$missing_fingerprint_existing_stderr" >/dev/null
+[ -z "$missing_fingerprint_existing" ] || die "VCS package was queued with missing fingerprint and existing predicted pkgfiles: $missing_fingerprint_existing"
+grep -F -x 'local-vcs-git: missing previous VCS fingerprint but predicted pkgfiles already exist, skipped' "$missing_fingerprint_existing_stderr" >/dev/null
 
 cat >"$state_dir/local-vcs-git.env" <<EOF
 STATE_VERSION=2
@@ -317,8 +317,28 @@ pkgfiles_only_unchanged=$(
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$pkgfiles_only_stderr"
 )
-[ "$pkgfiles_only_unchanged" = 'local-vcs-git' ] || die "VCS package was not queued for predicted pkgfile drift: $pkgfiles_only_unchanged"
-grep -F -x 'local-vcs-git: predicted pkgfiles changed, queued' "$pkgfiles_only_stderr" >/dev/null
+[ -z "$pkgfiles_only_unchanged" ] || die "VCS package was queued for predicted pkgfile drift with existing files: $pkgfiles_only_unchanged"
+grep -F -x 'local-vcs-git: predicted pkgfiles changed but existing package files are already present, skipped' "$pkgfiles_only_stderr" >/dev/null
+
+for new_pkgfile in $new_pkgfiles; do
+    rm -f "$object_dir/$PKG_PREFIX/$new_pkgfile" "$object_dir/$PKG_PREFIX/$new_pkgfile.sig"
+done
+
+pkgfiles_only_missing_stderr="$tmp_dir/pkgfiles-only-missing.stderr"
+pkgfiles_only_missing=$(
+    TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$pkgfiles_only_missing_stderr"
+)
+[ "$pkgfiles_only_missing" = 'local-vcs-git' ] || die "VCS package was not queued for predicted pkgfile drift with missing files: $pkgfiles_only_missing"
+grep -F -x 'local-vcs-git: predicted pkgfiles changed and predicted package files are missing, queued' "$pkgfiles_only_missing_stderr" >/dev/null
+
+for new_pkgfile in $new_pkgfiles; do
+    : >"$object_dir/$PKG_PREFIX/$new_pkgfile"
+    : >"$object_dir/$PKG_PREFIX/$new_pkgfile.sig"
+done
 
 cat >"$state_dir/local-vcs-git.env" <<EOF
 STATE_VERSION=2
@@ -568,8 +588,23 @@ empty_pkgfiles_drift_unchanged=$(
     PATH=$bin_dir:$PATH \
     sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$empty_pkgfiles_drift_stderr"
 )
-[ "$empty_pkgfiles_drift_unchanged" = 'plain-vcs-git' ] || die "VCS package with empty fingerprint and pkgfile drift was not queued: $empty_pkgfiles_drift_unchanged"
-grep -F -x 'plain-vcs-git: predicted pkgfiles changed, queued' "$empty_pkgfiles_drift_stderr" >/dev/null
+[ -z "$empty_pkgfiles_drift_unchanged" ] || die "VCS package with empty fingerprint and existing pkgfile drift was queued: $empty_pkgfiles_drift_unchanged"
+grep -F -x 'plain-vcs-git: predicted pkgfiles changed but existing package files are already present, skipped' "$empty_pkgfiles_drift_stderr" >/dev/null
+
+for plain_pkgfile in $plain_pkgfiles; do
+    rm -f "$object_dir/$PKG_PREFIX/$plain_pkgfile" "$object_dir/$PKG_PREFIX/$plain_pkgfile.sig"
+done
+
+empty_pkgfiles_missing_stderr="$tmp_dir/empty-pkgfiles-missing.stderr"
+empty_pkgfiles_missing=$(
+    TEST_STATE_DIR=$state_dir \
+    TEST_OBJECT_DIR=$object_dir \
+    PACKAGES_DIR=$packages_dir \
+    PATH=$bin_dir:$PATH \
+    sh "$SCRIPT_DIR/check-updates.sh" vcs 2>"$empty_pkgfiles_missing_stderr"
+)
+[ "$empty_pkgfiles_missing" = 'plain-vcs-git' ] || die "VCS package with empty fingerprint and missing predicted pkgfiles was not queued: $empty_pkgfiles_missing"
+grep -F -x 'plain-vcs-git: predicted pkgfiles changed and predicted package files are missing, queued' "$empty_pkgfiles_missing_stderr" >/dev/null
 
 rm -f "$packages_dir/plain-vcs-git.sh"
 

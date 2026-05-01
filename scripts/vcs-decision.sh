@@ -77,6 +77,7 @@ vcs_decide_probe_result() {
     current_pkgfiles=$6
     current_vcs_fingerprint=$7
     current_vcs_details=$8
+    current_pkgfiles_exist=$9
 
     VCS_DECISION=queue
     VCS_DECISION_LOG="$name: unknown VCS state, queued"
@@ -93,7 +94,12 @@ vcs_decide_probe_result() {
     if [ -z "$current_vcs_compare" ]; then
         if [ -z "$old_vcs_compare" ]; then
             if [ "$current_pkgfiles" != "$old_pkgfiles" ]; then
-                VCS_DECISION_LOG="$name: predicted pkgfiles changed, queued"
+                if [ "$current_pkgfiles_exist" = "1" ]; then
+                    VCS_DECISION=skip
+                    VCS_DECISION_LOG="$name: predicted pkgfiles changed but existing package files are already present, skipped"
+                    return 0
+                fi
+                VCS_DECISION_LOG="$name: predicted pkgfiles changed and predicted package files are missing, queued"
                 return 0
             fi
             VCS_DECISION=skip
@@ -105,7 +111,12 @@ vcs_decide_probe_result() {
     fi
 
     if [ -z "$old_vcs_compare" ]; then
-        VCS_DECISION_LOG="$name: missing previous VCS fingerprint, queued"
+        if [ "$current_pkgfiles" = "$old_pkgfiles" ] || [ "$current_pkgfiles_exist" = "1" ]; then
+            VCS_DECISION=skip
+            VCS_DECISION_LOG="$name: missing previous VCS fingerprint but predicted pkgfiles already exist, skipped"
+            return 0
+        fi
+        VCS_DECISION_LOG="$name: missing previous VCS fingerprint and predicted package files are missing, queued"
         return 0
     fi
 
@@ -115,7 +126,12 @@ vcs_decide_probe_result() {
     fi
 
     if [ "$current_pkgfiles" != "$old_pkgfiles" ]; then
-        VCS_DECISION_LOG="$name: predicted pkgfiles changed, queued"
+        if [ "$current_pkgfiles_exist" = "1" ]; then
+            VCS_DECISION=skip
+            VCS_DECISION_LOG="$name: predicted pkgfiles changed but existing package files are already present, skipped"
+            return 0
+        fi
+        VCS_DECISION_LOG="$name: predicted pkgfiles changed and predicted package files are missing, queued"
         return 0
     fi
 
