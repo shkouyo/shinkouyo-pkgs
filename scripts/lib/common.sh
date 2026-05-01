@@ -5,6 +5,7 @@ set -eu
 ARCH='x86_64'
 PKG_PREFIX="$ARCH"
 STATE_PREFIX=".state/$ARCH"
+INCOMING_PREFIX=".incoming/$ARCH"
 
 log() {
     printf '%s\n' "$*" >&2
@@ -84,6 +85,10 @@ state_s3_uri() {
     printf 's3://%s/%s/%s' "$S3_BUCKET" "$STATE_PREFIX" "$1"
 }
 
+incoming_s3_uri() {
+    printf 's3://%s/%s/%s' "$S3_BUCKET" "$INCOMING_PREFIX" "$1"
+}
+
 aws_s3_cp() {
     aws s3 cp --endpoint-url "$S3_ENDPOINT" "$@"
 }
@@ -94,6 +99,21 @@ aws_s3_rm() {
 
 aws_s3_ls() {
     aws s3 ls --endpoint-url "$S3_ENDPOINT" "$@"
+}
+
+aws_s3_rm_recursive() {
+    aws s3 rm --endpoint-url "$S3_ENDPOINT" --recursive "$@"
+}
+
+s3_list_keys() {
+    prefix=$1
+    list_tmp=$(mktemp)
+    if ! aws_s3_ls --recursive "s3://$S3_BUCKET/$prefix/" >"$list_tmp"; then
+        rm -f "$list_tmp"
+        return 1
+    fi
+    awk '{ print $4 }' "$list_tmp"
+    rm -f "$list_tmp"
 }
 
 s3_object_exists() {
@@ -280,6 +300,18 @@ is_valid_package_name() {
 
 require_package_name() {
     is_valid_package_name "${1-}" || die "invalid package name: ${1-}"
+}
+
+is_valid_stage_id() {
+    case ${1-} in
+        ''|-*|*[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-]*)
+            return 1
+            ;;
+    esac
+}
+
+require_stage_id() {
+    is_valid_stage_id "${1-}" || die "invalid stage id: ${1-}"
 }
 
 manifest_abs_path() {

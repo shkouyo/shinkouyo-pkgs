@@ -53,9 +53,17 @@ jobs:
     if: ${{ always() && needs.plan.outputs.has_builds == 'true' && (needs.plan.outputs.has_removals == 'false' || needs.remove.result == 'success') }}
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix: ${{ fromJson(needs.plan.outputs.build_matrix) }}
     uses: ./.github/workflows/_build-package.yml
     with:
       package: ${{ matrix.package }}
+    secrets: inherit
+
+  publish:
+    needs:
+      - plan
+      - remove
+      - build
+    if: ${{ always() && !cancelled() && needs.plan.outputs.has_builds == 'true' && (needs.plan.outputs.has_removals == 'false' || needs.remove.result == 'success') }}
+    uses: ./.github/workflows/_publish-staged.yml
     secrets: inherit

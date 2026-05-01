@@ -15,9 +15,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    concurrency:
-      group: ${{ vars.REPO_NAME }}-x86_64-r2-write
-      cancel-in-progress: false
     env:
       PACKAGE: ${{ inputs.package }}
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -65,10 +62,10 @@ jobs:
           set -eu
           sh scripts/build.sh collect "${{ steps.prepare.outputs.context_dir }}"
 
-      - name: Publish artifacts
+      - name: Stage artifacts
         run: |
           set -eu
-          sh scripts/publish.sh "${{ steps.prepare.outputs.context_dir }}"
+          sh scripts/stage.sh "${{ steps.prepare.outputs.context_dir }}" "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 
       - name: Cleanup build context
         if: ${{ always() }}

@@ -51,6 +51,7 @@ jobs:
           sh scripts/test-cleanup-build-context.sh
           sh scripts/test-repo-helpers.sh
           sh scripts/test-collect-artifacts.sh
+          sh scripts/test-staged-publish.sh
           sh scripts/test-run-probe-user.sh
           sh scripts/test-check-updates.sh
 

@@ -13,7 +13,7 @@ ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
     exit 1
 }
 
-require_publish_env
+require_repo_env
 require_cmd aws
 
 context_dir=$1

@@ -17,3 +17,9 @@ jobs:
     with:
       package: ${{ github.event.inputs.package }}
     secrets: inherit
+
+  publish:
+    needs: build
+    if: ${{ always() && !cancelled() }}
+    uses: ./.github/workflows/_publish-staged.yml
+    secrets: inherit

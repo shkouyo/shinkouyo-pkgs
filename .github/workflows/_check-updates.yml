@@ -130,9 +130,16 @@ jobs:
     if: ${{ !cancelled() && needs.merge-plan.result == 'success' && needs.merge-plan.outputs.has_items == 'true' }}
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix: ${{ fromJson(needs.merge-plan.outputs.matrix) }}
     uses: ./.github/workflows/_build-package.yml
     with:
       package: ${{ matrix.package }}
+    secrets: inherit
+
+  publish:
+    needs:
+      - merge-plan
+      - build
+    if: ${{ always() && !cancelled() && needs.merge-plan.result == 'success' && needs.merge-plan.outputs.has_items == 'true' }}
+    uses: ./.github/workflows/_publish-staged.yml
     secrets: inherit

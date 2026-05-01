@@ -1,20 +1,13 @@
-name: reconcile-daily
+name: _publish-staged
 
 on:
-  schedule:
-    - cron: '43 4 * * *'
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  publish-staged:
-    uses: ./.github/workflows/_publish-staged.yml
-    secrets: inherit
-
-  reconcile:
-    needs: publish-staged
+  publish:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     concurrency:
@@ -33,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Reconcile repository state
+      - name: Publish staged artifacts
         run: |
           set -eu
-          sh scripts/reconcile.sh
+          sh scripts/publish-staged.sh
