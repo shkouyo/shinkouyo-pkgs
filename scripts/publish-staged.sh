@@ -33,6 +33,12 @@ awk -v prefix="$INCOMING_PREFIX/" '
     }
 ' "$all_keys" >"$ready_keys"
 
+if [ ! -s "$ready_keys" ]; then
+    log "No staged builds ready to publish"
+    cleanup
+    exit 0
+fi
+
 : >"$selected"
 : >"$stale"
 
