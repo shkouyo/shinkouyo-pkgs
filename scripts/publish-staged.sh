@@ -22,7 +22,7 @@ all_keys="$tmp_dir/all.keys"
 selected="$tmp_dir/selected.tsv"
 stale="$tmp_dir/stale.tsv"
 
-s3_list_keys "$INCOMING_PREFIX" >"$all_keys"
+s3_list_keys "$INCOMING_PREFIX" >"$all_keys" || :
 awk -v prefix="$INCOMING_PREFIX/" '
     index($0, prefix) == 1 && $0 ~ /\/ready$/ {
         rel = substr($0, length(prefix) + 1)
