@@ -53,5 +53,5 @@ if [ -n "$good_packages" ]; then
     materialize_repo_links "$repo_dir"
     repo_upload_databases "$repo_dir"
 else
-    repo_delete_databases_if_present
+    repo_delete_databases_if_present || true
 fi
