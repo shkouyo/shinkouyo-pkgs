@@ -16,7 +16,7 @@ sudo pacman-key \
 sudo tee -a /etc/pacman.conf << 'EOF'
 [shinkouyo-pkgs]
 SigLevel = Required DatabaseOptional
-Server = https://pkgs.0x0f.dev/$arch
+Server = https://$arch.shinkouyo-pkgs.top
 EOF
 
 # Refresh package databases
